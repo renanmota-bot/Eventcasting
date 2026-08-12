@@ -27,6 +27,9 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.spacing = 0
+    
+    # ROLAGEM GLOBAL: Permite rolar qualquer tela se a altura da janela/celular for pequena
+    page.scroll = ft.ScrollMode.AUTO
 
     current_user = [None]
 
