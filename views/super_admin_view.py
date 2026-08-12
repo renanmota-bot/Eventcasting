@@ -1,5 +1,12 @@
 import flet as ft
-from database import execute_query
+
+try:
+    from database import execute_query
+except ImportError:
+    try:
+        from database.connection import execute_query
+    except ImportError:
+        from database.db import execute_query
 
 def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
     
@@ -27,7 +34,7 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
                         ),
                         ft.DataCell(
                             ft.IconButton(
-                                icon=ft.icons.BLOCK if is_ativa else ft.icons.CHECK_CIRCLE_OUTLINED,
+                                icon="block" if is_ativa else "check_circle",
                                 icon_color="#E76F51" if is_ativa else "#2A9D8F",
                                 on_click=lambda e, eid=emp['id'], st=is_ativa: alternar_status(eid, st)
                             )
@@ -62,7 +69,7 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
                         ft.DataCell(ft.Chip(label=ft.Text(usr.get('perfil') or "STAFF"))),
                         ft.DataCell(
                             ft.IconButton(
-                                icon=ft.icons.DELETE_OUTLINED,
+                                icon="delete",
                                 icon_color="#E76F51",
                                 on_click=lambda e, uid=usr['id']: deletar_usr(uid)
                             )
@@ -107,12 +114,12 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
         tabs=[
             ft.Tab(
                 text="Empresas (Tenants)",
-                icon=ft.icons.BUSINESS,
+                icon="business",
                 content=ft.Column([busca_empresa, ft.Column([tabela_empresas], scroll=ft.ScrollMode.AUTO)])
             ),
             ft.Tab(
                 text="Usuários Globais",
-                icon=ft.icons.PEOPLE,
+                icon="people",
                 content=ft.Column([busca_usuario, ft.Column([tabela_usuarios], scroll=ft.ScrollMode.AUTO)])
             ),
         ],
@@ -123,7 +130,7 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
         content=ft.Column([
             ft.Row([
                 ft.Text("Painel Master — Controle Total do SaaS", size=22, weight="bold", color="white"),
-                ft.ElevatedButton("Sair", icon=ft.icons.LOGOUT, on_click=lambda e: on_logout() if on_logout else None)
+                ft.ElevatedButton("Sair", icon="logout", on_click=lambda e: on_logout() if on_logout else None)
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             tabs
         ], spacing=20),
