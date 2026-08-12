@@ -55,7 +55,6 @@ def RegisterView(page: ft.Page, on_back, default_empresa_id=1):
     def take_selfie(_):
         threading.Thread(target=open_camera_thread, daemon=True).start()
 
-    # Campo de Código da Empresa Fixado e Bloqueado para Leitura
     txt_empresa_id = ft.TextField(
         label="Código da Produtora (Fixado)", value=str(default_empresa_id), read_only=True,
         border_color=COLOR_TEXT_SECONDARY, text_size=14, color=COLOR_PRIMARY,
@@ -90,6 +89,10 @@ def RegisterView(page: ft.Page, on_back, default_empresa_id=1):
 
     txt_codigo_validacao = ft.TextField(label="Código de 6 dígitos", max_length=6, text_align=ft.TextAlign.CENTER, text_size=18)
 
+    def fechar_dialog(e=None):
+        dlg_confirmacao.open = False
+        page.update()
+
     def confirm_registration(_):
         email_val = txt_email.value.strip()
         if not verify_code(email_val, txt_codigo_validacao.value or ""):
@@ -107,7 +110,7 @@ def RegisterView(page: ft.Page, on_back, default_empresa_id=1):
             foto_base64=foto_base64_str[0]
         )
 
-        page.close(dlg_confirmacao)
+        fechar_dialog()
 
         if success:
             show_snack("Conta de Staff criada com sucesso!", is_error=False)
@@ -122,7 +125,7 @@ def RegisterView(page: ft.Page, on_back, default_empresa_id=1):
             txt_codigo_validacao
         ]),
         actions=[
-            ft.TextButton("Cancelar", on_click=lambda _: page.close(dlg_confirmacao)),
+            ft.TextButton("Cancelar", on_click=fechar_dialog),
             ft.ElevatedButton("Confirmar e Criar Conta", style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"), on_click=confirm_registration)
         ]
     )
@@ -160,7 +163,10 @@ def RegisterView(page: ft.Page, on_back, default_empresa_id=1):
 
         codigo = generate_verification_code(email_val)
         send_email_code(email_val, codigo)
-        page.open(dlg_confirmacao)
+        
+        page.overlay.append(dlg_confirmacao)
+        dlg_confirmacao.open = True
+        page.update()
 
     def show_snack(msg, is_error=True):
         snack = ft.SnackBar(content=ft.Text(msg), bgcolor=COLOR_ERROR if is_error else COLOR_SUCCESS)
