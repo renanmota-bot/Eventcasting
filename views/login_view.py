@@ -40,6 +40,7 @@ def LoginView(page: ft.Page, on_login_success, on_navigate_register):
             return
 
         btn_login.disabled = True
+        btn_login.text = None
         btn_login.content = ft.Row(
             [
                 ft.ProgressRing(width=16, height=16, stroke_width=2, color="#000000"),

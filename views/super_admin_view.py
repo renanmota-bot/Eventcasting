@@ -121,9 +121,9 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
 
     tabs = ft.Tabs(
         selected_index=0,
-        tabs=[tab1, tab2],
         expand=True
     )
+    tabs.tabs = [tab1, tab2]
 
     return ft.Container(
         content=ft.Column([
