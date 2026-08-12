@@ -74,7 +74,6 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
             show_snack("Preencha e-mail e senha!")
             return
 
-        # Muda o botão imediatamente
         btn_entrar.disabled = True
         btn_entrar.content = ft.Row(
             [
@@ -86,7 +85,6 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
         )
         page.update()
 
-        # Roda o banco em segundo plano para o spinner aparecer na hora
         threading.Thread(target=processar_login, daemon=True).start()
 
     def restaurar_botao():
@@ -113,7 +111,8 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
                 ft.Container(height=10),
                 btn_entrar,
                 ft.TextButton(
-                    "Criar conta de Staff",
+                    "Cadastrar Minha Empresa / Produtora",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
                     on_click=lambda _: on_navigate_register() if on_navigate_register else None
                 )
             ],
