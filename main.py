@@ -1,34 +1,8 @@
-import flet as ft
-
-# Imports das Views
-from views.login_view import LoginView
-from views.register_view import RegisterView
-from views.super_admin_view import SuperAdminDashboardView
-
-# Tenta importar os outros dashboards
-try:
-    from views.admin.dashboard import AdminDashboardView
-except ImportError:
-    try:
-        from views.admin_view import AdminDashboardView
-    except ImportError:
-        AdminDashboardView = None
-
-try:
-    from views.staff.dashboard import StaffDashboardView
-except ImportError:
-    try:
-        from views.staff_view import StaffDashboardView
-    except ImportError:
-        StaffDashboardView = None
-
 def main(page: ft.Page):
     page.title = "Event Casting — Gestão de Equipes e Eventos"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.spacing = 0
-    
-    # ROLAGEM GLOBAL: Permite rolar qualquer tela se a altura da janela/celular for pequena
     page.scroll = ft.ScrollMode.AUTO
 
     current_user = [None]
@@ -67,54 +41,34 @@ def main(page: ft.Page):
 
         elif route_name == "ADMIN":
             if AdminDashboardView:
-                try:
-                    page.add(
-                        AdminDashboardView(
-                            page,
-                            user=current_user[0],
-                            on_logout=handle_logout,
-                            on_navigate=navigate_to
-                        )
+                page.add(
+                    AdminDashboardView(
+                        page,
+                        user=current_user[0],
+                        on_logout=handle_logout,
+                        on_navigate=navigate_to
                     )
-                except TypeError:
-                    page.add(
-                        AdminDashboardView(
-                            page,
-                            user=current_user[0],
-                            on_logout=handle_logout
-                        )
-                    )
-            else:
-                show_snack("Tela de Admin não encontrada no projeto.")
+                )
 
         elif route_name == "STAFF":
             if StaffDashboardView:
-                try:
-                    page.add(
-                        StaffDashboardView(
-                            page,
-                            user=current_user[0],
-                            on_logout=handle_logout,
-                            on_navigate=navigate_to
-                        )
+                page.add(
+                    StaffDashboardView(
+                        page,
+                        user=current_user[0],
+                        on_logout=handle_logout,
+                        on_navigate=navigate_to
                     )
-                except TypeError:
-                    page.add(
-                        StaffDashboardView(
-                            page,
-                            user=current_user[0],
-                            on_navigate=navigate_to
-                        )
-                    )
-            else:
-                show_snack("Tela de Staff não encontrada no projeto.")
+                )
 
         page.update()
 
     def handle_login_success(user):
         current_user[0] = user
+        # Salva a sessão permanentemente
+        page.client_storage.set("user_session", user)
+        
         perfil = user.get("perfil", "STAFF").upper()
-
         if perfil == "SUPER_ADMIN":
             navigate_to("SUPER_ADMIN")
         elif perfil == "ADMIN":
@@ -122,32 +76,14 @@ def main(page: ft.Page):
         else:
             navigate_to("STAFF")
 
-    def handle_ghost_login(target_user):
-        current_user[0] = target_user
-        perfil = target_user.get("perfil", "ADMIN").upper()
-        
-        show_snack(f"Sessão alterada para: {target_user.get('nome')} ({perfil})", is_error=False)
-
-        if perfil == "ADMIN":
-            navigate_to("ADMIN")
-        elif perfil == "SUPER_ADMIN":
-            navigate_to("SUPER_ADMIN")
-        else:
-            navigate_to("STAFF")
-
     def handle_logout():
         current_user[0] = None
+        # Limpa a sessão salva ao clicar em Sair
+        if page.client_storage.contains("user_session"):
+            page.client_storage.remove("user_session")
         navigate_to("LOGIN")
 
-    def show_snack(msg, is_error=True):
-        snack = ft.SnackBar(
-            content=ft.Text(msg),
-            bgcolor="#E76F51" if is_error else "#2A9D8F"
-        )
-        page.overlay.append(snack)
-        snack.open = True
-        page.update()
-
+    # --- VERIFICAÇÃO DE SESSÃO AUTOMÁTICA ---
     # Captura parâmetro de convite de empresa na URL (?empresa=ID)
     empresa_link_id = 1
     if page.route and "empresa=" in page.route:
@@ -159,7 +95,9 @@ def main(page: ft.Page):
     if "register" in page.route:
         navigate_to("REGISTER", empresa_id=empresa_link_id)
     else:
-        navigate_to("LOGIN")
-
-if __name__ == "__main__":
-    ft.app(target=main)
+        # Checa se o usuário já tem login salvo no dispositivo
+        saved_user = page.client_storage.get("user_session")
+        if saved_user:
+            handle_login_success(saved_user)
+        else:
+            navigate_to("LOGIN")

@@ -10,9 +10,10 @@ from config.settings import (
 from services.candidacy_service import get_open_jobs_for_staff, apply_for_job
 from services.checkin_service import get_staff_approved_schedules
 
-def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
-    usuario_id = user.get('id')
-    foto_b64 = user.get('foto_base64')
+def StaffDashboardView(page: ft.Page, user: dict, on_navigate=None, on_logout=None):
+    usuario_id = user.get('id') if user else None
+    nome_user = user.get('nome', 'Staff') if user else 'Staff'
+    foto_b64 = user.get('foto_base64') if user else None
     active_tab = "vagas"
 
     list_vagas = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -52,7 +53,7 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
 
     def reload_available_jobs():
         list_vagas.controls.clear()
-        vagas = get_open_jobs_for_staff(usuario_id)
+        vagas = get_open_jobs_for_staff(usuario_id) if usuario_id else []
 
         if not vagas:
             list_vagas.controls.append(
@@ -99,7 +100,6 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
                 on_click=lambda _, loc=local_evento: open_google_maps(loc)
             )
 
-            # Card adaptado para layout em Coluna no celular
             card = ft.Container(
                 bgcolor=COLOR_SURFACE, padding=12, border_radius=10,
                 content=ft.Column(
@@ -120,7 +120,7 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
 
     def reload_schedules():
         list_escalas.controls.clear()
-        schedules = get_staff_approved_schedules(usuario_id)
+        schedules = get_staff_approved_schedules(usuario_id) if usuario_id else []
 
         if not schedules:
             list_escalas.controls.append(
@@ -207,7 +207,6 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
 
     render_tab()
 
-    # Layout do Dashboard Staff Responsivo para Celular
     return ft.Container(
         expand=True, padding=12, bgcolor="#0B132B",
         content=ft.Column(
@@ -219,14 +218,14 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
                         ft.Row(controls=[
                             user_avatar,
                             ft.Column(controls=[
-                                ft.Text(f"{user.get('nome')}", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
+                                ft.Text(f"{nome_user}", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
                                 ft.Text("Staff Verificado", size=11, color=COLOR_SUCCESS)
                             ], spacing=0)
                         ], spacing=8),
                         ft.Row(controls=[
-                            ft.IconButton(ft.Icons.SETTINGS, icon_size=20, tooltip="Editar Perfil", icon_color=COLOR_PRIMARY, on_click=lambda _: on_navigate("PROFILE")),
+                            ft.IconButton(ft.Icons.SETTINGS, icon_size=20, tooltip="Editar Perfil", icon_color=COLOR_PRIMARY, on_click=lambda _: on_navigate("PROFILE") if on_navigate else None),
                             ft.IconButton(ft.Icons.REFRESH, icon_size=20, tooltip="Atualizar", icon_color=COLOR_PRIMARY, on_click=lambda _: render_tab()),
-                            ft.IconButton(ft.Icons.LOGOUT, icon_size=20, tooltip="Sair", icon_color=COLOR_ERROR, on_click=lambda _: on_logout())
+                            ft.IconButton(ft.Icons.LOGOUT, icon_size=20, tooltip="Sair", icon_color=COLOR_ERROR, on_click=lambda _: on_logout() if on_logout else None)
                         ], spacing=2)
                     ]
                 ),
