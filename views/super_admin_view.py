@@ -1,5 +1,8 @@
 import flet as ft
-from database import execute_query
+try:
+    from database import execute_query
+except ImportError:
+    from database.connection import execute_query
 
 def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
     
