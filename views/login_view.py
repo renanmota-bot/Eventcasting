@@ -25,7 +25,6 @@ def LoginView(page: ft.Page, on_login_success, on_navigate_register):
         label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY)
     )
 
-    # Botão instanciado como variável para podermos alterar seu estado visual
     btn_login = ft.ElevatedButton(
         "Entrar",
         style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"),
@@ -40,7 +39,6 @@ def LoginView(page: ft.Page, on_login_success, on_navigate_register):
             show_snack("Preencha e-mail e senha.")
             return
 
-        # 1. MOSTRA O SPINNER DE CARREGAMENTO IMEDIATAMENTE
         btn_login.disabled = True
         btn_login.content = ft.Row(
             [
@@ -51,7 +49,6 @@ def LoginView(page: ft.Page, on_login_success, on_navigate_register):
         )
         page.update()
 
-        # 2. AUTENTICAÇÃO NO BANCO
         user = authenticate_user(email, senha)
 
         if user:
@@ -59,13 +56,11 @@ def LoginView(page: ft.Page, on_login_success, on_navigate_register):
             on_login_success(user)
         else:
             show_snack("E-mail ou senha incorretos / Conta inativa.")
-            # 3. RESTAURA O BOTÃO SE FALHAR O LOGIN
             btn_login.disabled = False
             btn_login.content = None
             btn_login.text = "Entrar"
             page.update()
 
-    # Associa a função ao evento de clique do botão
     btn_login.on_click = handle_login
 
     def show_snack(msg, is_error=True):

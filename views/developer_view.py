@@ -3,7 +3,6 @@ from database import execute_query
 
 def DeveloperView(page: ft.Page, user=None, on_logout=None):
     
-    # --- BUSCA DE DADOS NO POSTGRESQL ---
     def carregar_empresas(filtro=""):
         tabela_empresas.rows.clear()
         query = """
@@ -77,7 +76,6 @@ def DeveloperView(page: ft.Page, user=None, on_logout=None):
         execute_query("DELETE FROM usuarios WHERE id = %s;", (uid,), commit=True)
         carregar_usuarios(busca_usuario.value or "")
 
-    # Componentes de Tabelas
     tabela_empresas = ft.DataTable(
         columns=[
             ft.DataColumn(ft.Text("ID")),
@@ -101,7 +99,6 @@ def DeveloperView(page: ft.Page, user=None, on_logout=None):
     busca_empresa = ft.TextField(hint_text="Filtrar Empresas por Nome ou CNPJ...", on_change=lambda e: carregar_empresas(e.control.value), expand=True)
     busca_usuario = ft.TextField(hint_text="Filtrar Usuários por Nome ou Email...", on_change=lambda e: carregar_usuarios(e.control.value), expand=True)
 
-    # Carga Inicial de dados
     carregar_empresas()
     carregar_usuarios()
 
@@ -124,6 +121,3 @@ def DeveloperView(page: ft.Page, user=None, on_logout=None):
         ], spacing=20),
         padding=20, expand=True, bgcolor="#0B132B"
     )
-
-# Alias de compatibilidade para garantir que funcione independentemente da chamada
-SuperAdminDashboardView = DeveloperView
