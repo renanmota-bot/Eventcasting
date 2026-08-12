@@ -51,56 +51,61 @@ def AdminDashboardView(page: ft.Page, user=None, on_logout=None, on_navigate=Non
 
     btn_copiar_link = ft.ElevatedButton(
         "Copiar Link do Staff",
-        style=ft.ButtonStyle(bgcolor="#4CC9F0", color="white"),
-        on_click=handle_copy_staff_link
+        style=ft.ButtonStyle(bgcolor="#4CC9F0", color="white", shape=ft.RoundedRectangleBorder(radius=8)),
+        on_click=handle_copy_staff_link,
+        height=45
     )
 
     card_link_staff = ft.Container(
         content=ft.Column([
-            ft.Text("Link de Convite para Equipe (Staff)", weight="bold", size=16, color="white"),
+            ft.Text("Link de Convite para Equipe (Staff)", weight="bold", size=15, color="white"),
             ft.Text("Compartilhe este link para cadastrar novos membros na sua empresa:", size=12, color="#94A3B8"),
-            ft.Row([
-                ft.TextField(value=staff_link, read_only=True, expand=True, text_size=13),
-                btn_copiar_link
-            ])
-        ], spacing=10),
+            ft.TextField(value=staff_link, read_only=True, text_size=12, border_radius=8),
+            btn_copiar_link
+        ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
         bgcolor="#1E293B",
-        padding=20,
-        border_radius=10
+        padding=15,
+        border_radius=12
     )
 
-    cards_metricas = ft.Row([
+    cards_metricas = ft.ResponsiveRow([
         ft.Container(
             content=ft.Column([
-                ft.Text("Membros Staff", color="#94A3B8"),
+                ft.Text("Membros Staff", color="#94A3B8", size=12),
                 txt_total_staff
             ]),
-            bgcolor="#1E293B", padding=15, border_radius=8, expand=True
+            bgcolor="#1E293B", padding=15, border_radius=10, col={"xs": 6, "sm": 6}
         ),
         ft.Container(
             content=ft.Column([
-                ft.Text("Eventos Ativos", color="#94A3B8"),
+                ft.Text("Eventos Ativos", color="#94A3B8", size=12),
                 txt_eventos_ativos
             ]),
-            bgcolor="#1E293B", padding=15, border_radius=8, expand=True
+            bgcolor="#1E293B", padding=15, border_radius=10, col={"xs": 6, "sm": 6}
         )
-    ], spacing=20)
+    ], spacing=10)
 
     carregar_metricas()
 
+    # Layout fluído que se adapta perfeitamente ao celular e ao computador
     return ft.Container(
+        expand=True,
+        bgcolor="#0B132B",
+        padding=12,
         content=ft.Column([
             ft.Row([
                 ft.Column([
-                    ft.Text(f"Painel da Empresa — {nome_admin}", size=22, weight="bold", color="white"),
-                    ft.Text("Gestão da equipe de eventos e convites", size=13, color="#94A3B8")
-                ]),
-                ft.ElevatedButton("Sair", on_click=lambda e: on_logout() if on_logout else None)
+                    ft.Text(f"Painel — {nome_admin}", size=18, weight="bold", color="white"),
+                    ft.Text("Gestão da equipe de eventos", size=12, color="#94A3B8")
+                ], expand=True),
+                ft.IconButton(
+                    icon=ft.Icons.LOGOUT,
+                    icon_color="#E76F51",
+                    tooltip="Sair",
+                    on_click=lambda e: on_logout() if on_logout else None
+                )
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             cards_metricas,
             card_link_staff
-        ], spacing=20, scroll=ft.ScrollMode.AUTO),
-        padding=20,
-        expand=True,
-        bgcolor="#0B132B"
+        ], spacing=15, scroll=ft.ScrollMode.AUTO)
     )

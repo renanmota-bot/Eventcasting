@@ -15,17 +15,16 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
     foto_b64 = user.get('foto_base64')
     active_tab = "vagas"
 
-    list_vagas = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
-    list_escalas = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
+    list_vagas = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+    list_escalas = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
     main_content_area = ft.Container(expand=True)
 
     if foto_b64:
-        user_avatar = ft.CircleAvatar(foreground_image_src=f"data:image/jpeg;base64,{foto_b64}", radius=22)
+        user_avatar = ft.CircleAvatar(foreground_image_src=f"data:image/jpeg;base64,{foto_b64}", radius=18)
     else:
-        user_avatar = ft.CircleAvatar(content=ft.Icon(ft.Icons.PERSON, color=COLOR_TEXT_PRIMARY), bgcolor="#0F172A", radius=22)
+        user_avatar = ft.CircleAvatar(content=ft.Icon(ft.Icons.PERSON, color=COLOR_TEXT_PRIMARY, size=18), bgcolor="#0F172A", radius=18)
 
     def validate_address_exists(endereco_str: str) -> bool:
-        """Verifica se o endereço existe usando o Geocoding público OpenStreetMap/Nominatim."""
         if not endereco_str or len(endereco_str.strip()) < 5:
             return False
         try:
@@ -36,16 +35,13 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
                 data = json.loads(response.read().decode())
                 return len(data) > 0
         except Exception:
-            # Em caso de instabilidade de rede temporária, aceita se tiver cidade/estado preenchidos
             return bool(endereco_str and len(endereco_str) > 5)
 
     def open_google_maps(endereco):
-        """Valida e abre o Google Maps ou exibe 'Endereço não encontrado'."""
         if not endereco or endereco.strip() in ["Local a definir", "S/N", ""]:
             show_snack("Endereço não encontrado", is_error=True)
             return
 
-        # Checa se o endereço é válido
         if not validate_address_exists(endereco):
             show_snack("Endereço não encontrado", is_error=True)
             return
@@ -61,9 +57,9 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
         if not vagas:
             list_vagas.controls.append(
                 ft.Container(
-                    bgcolor=COLOR_SURFACE, padding=20, border_radius=8,
+                    bgcolor=COLOR_SURFACE, padding=15, border_radius=8,
                     alignment=ft.Alignment(0, 0),
-                    content=ft.Text("Nenhuma vaga aberta disponível no momento.", color=COLOR_TEXT_SECONDARY)
+                    content=ft.Text("Nenhuma vaga aberta disponível no momento.", color=COLOR_TEXT_SECONDARY, size=13)
                 )
             )
             return
@@ -83,14 +79,15 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
                 st_upper = str(status_candidatura).upper()
                 bg_col = COLOR_INFO if st_upper == 'PENDENTE' else (COLOR_SUCCESS if st_upper == 'APROVADO' else COLOR_ERROR)
                 btn_acao = ft.Container(
-                    content=ft.Text(f"Status: {st_upper}", size=12, color="#FFFFFF", weight=ft.FontWeight.BOLD),
-                    bgcolor=bg_col, padding=8, border_radius=6
+                    content=ft.Text(f"Status: {st_upper}", size=11, color="#FFFFFF", weight=ft.FontWeight.BOLD),
+                    bgcolor=bg_col, padding=6, border_radius=6, alignment=ft.Alignment(0, 0)
                 )
             else:
                 btn_acao = ft.ElevatedButton(
                     "Candidatar-se",
                     icon=ft.Icons.CHECK_CIRCLE,
                     style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"),
+                    height=38,
                     on_click=lambda _, vid=v['vaga_id']: handle_apply(vid)
                 )
 
@@ -102,19 +99,19 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
                 on_click=lambda _, loc=local_evento: open_google_maps(loc)
             )
 
+            # Card adaptado para layout em Coluna no celular
             card = ft.Container(
-                bgcolor=COLOR_SURFACE, padding=15, border_radius=8,
-                content=ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                bgcolor=COLOR_SURFACE, padding=12, border_radius=10,
+                content=ft.Column(
+                    spacing=6,
                     controls=[
-                        ft.Column(spacing=4, controls=[
-                            ft.Text(v['funcao'], weight=ft.FontWeight.BOLD, size=16, color=COLOR_TEXT_PRIMARY),
-                            ft.Text(f"🎪 Evento: {v['evento_nome']} ({v['empresa_nome']})", size=13, color=COLOR_TEXT_PRIMARY),
-                            ft.Text(f"📍 Localização: {local_evento}", size=13, color=COLOR_PRIMARY, weight=ft.FontWeight.BOLD),
-                            btn_maps,
-                            ft.Text(f"📅 Período: {d_inicio_br} até {d_fim_br}", size=12, color=COLOR_TEXT_SECONDARY),
-                            ft.Text(f"💰 Diária: R$ {v['valor_diaria']} | Qtd: {v['quantidade']} vagas", size=12, color=COLOR_SUCCESS, weight=ft.FontWeight.BOLD)
-                        ]),
+                        ft.Text(v['funcao'], weight=ft.FontWeight.BOLD, size=15, color=COLOR_TEXT_PRIMARY),
+                        ft.Text(f"🎪 {v['evento_nome']} ({v['empresa_nome']})", size=12, color=COLOR_TEXT_PRIMARY),
+                        ft.Text(f"📍 Local: {local_evento}", size=12, color=COLOR_PRIMARY, weight=ft.FontWeight.BOLD),
+                        btn_maps,
+                        ft.Text(f"📅 Período: {d_inicio_br} até {d_fim_br}", size=11, color=COLOR_TEXT_SECONDARY),
+                        ft.Text(f"💰 Diária: R$ {v['valor_diaria']} | Qtd: {v['quantidade']} vagas", size=12, color=COLOR_SUCCESS, weight=ft.FontWeight.BOLD),
+                        ft.Container(height=4),
                         btn_acao
                     ]
                 )
@@ -128,9 +125,9 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
         if not schedules:
             list_escalas.controls.append(
                 ft.Container(
-                    bgcolor=COLOR_SURFACE, padding=20, border_radius=8,
+                    bgcolor=COLOR_SURFACE, padding=15, border_radius=8,
                     alignment=ft.Alignment(0, 0),
-                    content=ft.Text("Você ainda não possui escalas aprovadas.", color=COLOR_TEXT_SECONDARY)
+                    content=ft.Text("Você ainda não possui escalas aprovadas.", color=COLOR_TEXT_SECONDARY, size=13)
                 )
             )
             return
@@ -149,25 +146,26 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
             local_evento = s.get('evento_local') or "Local a definir"
 
             btn_maps = ft.ElevatedButton(
-                "Como Chegar (Abrir Maps)", icon=ft.Icons.MAP,
+                "Como Chegar (Maps)", icon=ft.Icons.MAP,
                 style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"),
+                height=38,
                 on_click=lambda _, loc=local_evento: open_google_maps(loc)
             )
 
             card = ft.Container(
-                bgcolor=COLOR_SURFACE, padding=15, border_radius=8,
+                bgcolor=COLOR_SURFACE, padding=12, border_radius=10,
                 content=ft.Column(spacing=6, controls=[
-                    ft.Text(f"⭐ {s['funcao']} — {s['evento_nome']}", weight=ft.FontWeight.BOLD, size=16, color=COLOR_PRIMARY),
-                    ft.Text(f"🏢 Produtora: {s['empresa_nome']}", size=13, color=COLOR_TEXT_PRIMARY),
-                    ft.Text(f"📍 Localização do Trabalho: {local_evento}", size=13, color=COLOR_PRIMARY, weight=ft.FontWeight.BOLD),
+                    ft.Text(f"⭐ {s['funcao']} — {s['evento_nome']}", weight=ft.FontWeight.BOLD, size=15, color=COLOR_PRIMARY),
+                    ft.Text(f"🏢 Produtora: {s['empresa_nome']}", size=12, color=COLOR_TEXT_PRIMARY),
+                    ft.Text(f"📍 Local: {local_evento}", size=12, color=COLOR_PRIMARY, weight=ft.FontWeight.BOLD),
                     btn_maps,
-                    ft.Text(f"📅 Período: {d_inicio_br} até {d_fim_br}", size=12, color=COLOR_TEXT_SECONDARY),
-                    ft.Text(f"💰 Diária: R$ {s['valor_diaria']}", size=13, color=COLOR_SUCCESS, weight=ft.FontWeight.BOLD),
+                    ft.Text(f"📅 Período: {d_inicio_br} até {d_fim_br}", size=11, color=COLOR_TEXT_SECONDARY),
+                    ft.Text(f"💰 Diária: R$ {s['valor_diaria']}", size=12, color=COLOR_SUCCESS, weight=ft.FontWeight.BOLD),
                     ft.Divider(color="#334155"),
-                    ft.Row(controls=[
-                        ft.Text(f" Entrada: {in_time}", size=12, color=COLOR_TEXT_SECONDARY),
-                        ft.Text(f" Saída: {out_time}", size=12, color=COLOR_TEXT_SECONDARY)
-                    ], spacing=15)
+                    ft.Column(controls=[
+                        ft.Text(f"Entrada: {in_time}", size=11, color=COLOR_TEXT_SECONDARY),
+                        ft.Text(f"Saída: {out_time}", size=11, color=COLOR_TEXT_SECONDARY)
+                    ], spacing=2)
                 ])
             )
             list_escalas.controls.append(card)
@@ -204,15 +202,16 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
             main_content_area.content = list_escalas
         page.update()
 
-    btn_tab_vagas = ft.ElevatedButton("Oportunidades Abertas", on_click=lambda _: set_tab("vagas"))
-    btn_tab_escalas = ft.ElevatedButton("Minhas Escalas Aprovadas", on_click=lambda _: set_tab("escalas"))
+    btn_tab_vagas = ft.ElevatedButton("Oportunidades", on_click=lambda _: set_tab("vagas"), height=36)
+    btn_tab_escalas = ft.ElevatedButton("Minhas Escalas", on_click=lambda _: set_tab("escalas"), height=36)
 
     render_tab()
 
+    # Layout do Dashboard Staff Responsivo para Celular
     return ft.Container(
-        expand=True, padding=20,
+        expand=True, padding=12, bgcolor="#0B132B",
         content=ft.Column(
-            expand=True, spacing=15,
+            expand=True, spacing=12, scroll=ft.ScrollMode.AUTO,
             controls=[
                 ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -220,19 +219,19 @@ def StaffDashboardView(page: ft.Page, user: dict, on_navigate, on_logout):
                         ft.Row(controls=[
                             user_avatar,
                             ft.Column(controls=[
-                                ft.Text(f"{user.get('nome')}", size=16, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
-                                ft.Text("Perfil Staff Verificado", size=12, color=COLOR_SUCCESS)
-                            ])
-                        ]),
+                                ft.Text(f"{user.get('nome')}", size=14, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
+                                ft.Text("Staff Verificado", size=11, color=COLOR_SUCCESS)
+                            ], spacing=0)
+                        ], spacing=8),
                         ft.Row(controls=[
-                            ft.IconButton(ft.Icons.SETTINGS, tooltip="Editar Perfil", icon_color=COLOR_PRIMARY, on_click=lambda _: on_navigate("PROFILE")),
-                            ft.IconButton(ft.Icons.REFRESH, tooltip="Atualizar", icon_color=COLOR_PRIMARY, on_click=lambda _: render_tab()),
-                            ft.IconButton(ft.Icons.LOGOUT, tooltip="Sair", icon_color=COLOR_ERROR, on_click=lambda _: on_logout())
-                        ])
+                            ft.IconButton(ft.Icons.SETTINGS, icon_size=20, tooltip="Editar Perfil", icon_color=COLOR_PRIMARY, on_click=lambda _: on_navigate("PROFILE")),
+                            ft.IconButton(ft.Icons.REFRESH, icon_size=20, tooltip="Atualizar", icon_color=COLOR_PRIMARY, on_click=lambda _: render_tab()),
+                            ft.IconButton(ft.Icons.LOGOUT, icon_size=20, tooltip="Sair", icon_color=COLOR_ERROR, on_click=lambda _: on_logout())
+                        ], spacing=2)
                     ]
                 ),
-                ft.Row(controls=[btn_tab_vagas, btn_tab_escalas], spacing=10),
-                ft.Divider(color="#334155"),
+                ft.Row(controls=[btn_tab_vagas, btn_tab_escalas], spacing=8, alignment=ft.MainAxisAlignment.START),
+                ft.Divider(color="#334155", height=1),
                 main_content_area
             ]
         )
