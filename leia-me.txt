@@ -1,0 +1,27 @@
+.\venv\Scripts\activate
+
+As credenciais cadastradas para teste são:
+
+Administrador (ADMIN)
+
+Login: admin@jmeventos.com
+
+Senha: admin123
+
+Desenvolvedor (DEV)
+
+Login: dev@jmeventos.com
+
+Senha: dev123
+
+Colaborador Aprovado (STAFF)
+
+Login: carlos@gmail.com
+
+Senha: staff123
+
+Colaborador Pendente (STAFF)
+
+Login: joao@gmail.com
+
+Senha: staff123
