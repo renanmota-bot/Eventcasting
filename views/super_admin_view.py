@@ -113,12 +113,12 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
         selected_index=0,
         tabs=[
             ft.Tab(
-                text="Empresas (Tenants)",
+                label="Empresas (Tenants)",
                 icon="business",
                 content=ft.Column([busca_empresa, ft.Column([tabela_empresas], scroll=ft.ScrollMode.AUTO)])
             ),
             ft.Tab(
-                text="Usuários Globais",
+                label="Usuários Globais",
                 icon="people",
                 content=ft.Column([busca_usuario, ft.Column([tabela_usuarios], scroll=ft.ScrollMode.AUTO)])
             ),
