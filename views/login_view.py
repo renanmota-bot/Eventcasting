@@ -56,9 +56,8 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
                 senha_valida = (senha_val == senha_hash_db)
 
             if senha_valida:
-                # Salva a sessão no navegador após a validação
                 try:
-                    page.client_storage.set("user_session", usuario)
+                    page.session.set("user_session", usuario)
                 except Exception:
                     pass
 

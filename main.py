@@ -46,7 +46,6 @@ def main(page: ft.Page):
             )
 
         elif route_name == "REGISTER_COMPANY":
-            # Abre o cadastro de Empresa/Produtora para pagamento
             page.add(
                 RegisterCompanyView(
                     page,
@@ -56,7 +55,6 @@ def main(page: ft.Page):
             )
 
         elif route_name == "REGISTER_STAFF":
-            # Abre o cadastro do Staff vindo do link com ID da empresa
             page.add(
                 RegisterView(
                     page,
@@ -101,7 +99,10 @@ def main(page: ft.Page):
 
     def handle_login_success(user):
         current_user[0] = user
-        page.client_storage.set("user_session", user)
+        try:
+            page.session.set("user_session", user)
+        except Exception:
+            pass
         
         perfil = user.get("perfil", "STAFF").upper()
         if perfil == "SUPER_ADMIN":
@@ -123,14 +124,16 @@ def main(page: ft.Page):
 
     def handle_logout():
         current_user[0] = None
-        if page.client_storage.contains("user_session"):
-            page.client_storage.remove("user_session")
+        try:
+            if page.session.contains("user_session"):
+                page.session.remove("user_session")
+        except Exception:
+            pass
         navigate_to("LOGIN")
 
     # --- CONTROLE DE ROTAS ---
     empresa_link_id = 1
     
-    # Se a URL contiver 'empresa=', entende que é um convite de Staff
     if page.route and "empresa=" in page.route:
         try:
             empresa_link_id = int(page.route.split("empresa=")[1].split("&")[0])
@@ -138,8 +141,13 @@ def main(page: ft.Page):
             empresa_link_id = 1
         navigate_to("REGISTER_STAFF", empresa_id=empresa_link_id)
     else:
-        # Checa login salvo no dispositivo
-        saved_user = page.client_storage.get("user_session")
+        saved_user = None
+        try:
+            if page.session.contains("user_session"):
+                saved_user = page.session.get("user_session")
+        except Exception:
+            pass
+
         if saved_user:
             handle_login_success(saved_user)
         else:
