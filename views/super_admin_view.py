@@ -1,8 +1,13 @@
 import flet as ft
+
+# Import dinâmico para garantir compatibilidade com a estrutura da pasta database
 try:
     from database import execute_query
 except ImportError:
-    from database.connection import execute_query
+    try:
+        from database.connection import execute_query
+    except ImportError:
+        from database.db import execute_query
 
 def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
     
