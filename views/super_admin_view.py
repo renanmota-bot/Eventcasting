@@ -109,20 +109,19 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
     carregar_empresas()
     carregar_usuarios()
 
+    tab1 = ft.Tab()
+    tab1.text = "Empresas (Tenants)"
+    tab1.icon = "business"
+    tab1.content = ft.Column([busca_empresa, ft.Column([tabela_empresas], scroll=ft.ScrollMode.AUTO)])
+
+    tab2 = ft.Tab()
+    tab2.text = "Usuários Globais"
+    tab2.icon = "people"
+    tab2.content = ft.Column([busca_usuario, ft.Column([tabela_usuarios], scroll=ft.ScrollMode.AUTO)])
+
     tabs = ft.Tabs(
         selected_index=0,
-        tabs=[
-            ft.Tab(
-                label="Empresas (Tenants)",
-                icon="business",
-                content=ft.Column([busca_empresa, ft.Column([tabela_empresas], scroll=ft.ScrollMode.AUTO)])
-            ),
-            ft.Tab(
-                label="Usuários Globais",
-                icon="people",
-                content=ft.Column([busca_usuario, ft.Column([tabela_usuarios], scroll=ft.ScrollMode.AUTO)])
-            ),
-        ],
+        tabs=[tab1, tab2],
         expand=True
     )
 
