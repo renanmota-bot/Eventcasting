@@ -1,5 +1,6 @@
 import flet as ft
 import bcrypt
+import threading
 
 try:
     from database import execute_query
@@ -25,7 +26,6 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
         text_size=14
     )
 
-    # Botão de Login com estado de carregamento
     btn_entrar = ft.ElevatedButton(
         content=ft.Text("Entrar", size=16, weight="bold"),
         style=ft.ButtonStyle(bgcolor="#4CC9F0", color="white"),
@@ -33,25 +33,9 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
         height=45
     )
 
-    def handle_login(e):
+    def processar_login():
         email_val = txt_email.value.strip()
         senha_val = txt_senha.value.strip()
-
-        if not email_val or not senha_val:
-            show_snack("Preencha e-mail e senha!")
-            return
-
-        # Ativa o estado de carregamento visual
-        btn_entrar.disabled = True
-        btn_entrar.content = ft.Row(
-            [
-                ft.ProgressRing(width=20, height=20, stroke_width=2, color="white"),
-                ft.Text("Acessando...", size=14, weight="bold")
-            ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            spacing=10
-        )
-        page.update()
 
         try:
             query = "SELECT id, nome, email, senha, perfil, empresa_id FROM usuarios WHERE email = %s LIMIT 1;"
@@ -65,7 +49,6 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
             usuario = usuarios[0]
             senha_hash_db = usuario.get('senha', '')
 
-            # Valida a senha cryptografada
             senha_valida = False
             if senha_hash_db.startswith('$2b$') or senha_hash_db.startswith('$2a$'):
                 senha_valida = bcrypt.checkpw(senha_val.encode('utf-8'), senha_hash_db.encode('utf-8'))
@@ -82,6 +65,29 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
         except Exception as ex:
             restaurar_botao()
             show_snack(f"Erro ao conectar: {ex}")
+
+    def handle_login(e):
+        email_val = txt_email.value.strip()
+        senha_val = txt_senha.value.strip()
+
+        if not email_val or not senha_val:
+            show_snack("Preencha e-mail e senha!")
+            return
+
+        # Muda o botão imediatamente
+        btn_entrar.disabled = True
+        btn_entrar.content = ft.Row(
+            [
+                ft.ProgressRing(width=20, height=20, stroke_width=2, color="white"),
+                ft.Text("Acessando...", size=14, weight="bold")
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=10
+        )
+        page.update()
+
+        # Roda o banco em segundo plano para o spinner aparecer na hora
+        threading.Thread(target=processar_login, daemon=True).start()
 
     def restaurar_botao():
         btn_entrar.disabled = False
