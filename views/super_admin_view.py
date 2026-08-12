@@ -1,12 +1,5 @@
 import flet as ft
-
-try:
-    from database import execute_query
-except ImportError:
-    try:
-        from database.connection import execute_query
-    except ImportError:
-        from database.db import execute_query
+from database import execute_query
 
 def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
     
@@ -34,7 +27,7 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
                         ),
                         ft.DataCell(
                             ft.IconButton(
-                                icon=ft.icons.BLOCK if is_ativa else ft.icons.CHECK_CIRCLE,
+                                icon=ft.icons.BLOCK if is_ativa else ft.icons.CHECK_CIRCLE_OUTLINED,
                                 icon_color="#E76F51" if is_ativa else "#2A9D8F",
                                 on_click=lambda e, eid=emp['id'], st=is_ativa: alternar_status(eid, st)
                             )
@@ -69,7 +62,7 @@ def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
                         ft.DataCell(ft.Chip(label=ft.Text(usr.get('perfil') or "STAFF"))),
                         ft.DataCell(
                             ft.IconButton(
-                                icon=ft.icons.DELETE_FOREVER,
+                                icon=ft.icons.DELETE_OUTLINED,
                                 icon_color="#E76F51",
                                 on_click=lambda e, uid=usr['id']: deletar_usr(uid)
                             )
