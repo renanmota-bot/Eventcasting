@@ -99,11 +99,6 @@ def main(page: ft.Page):
 
     def handle_login_success(user):
         current_user[0] = user
-        try:
-            page.session.set("user_session", user)
-        except Exception:
-            pass
-        
         perfil = user.get("perfil", "STAFF").upper()
         if perfil == "SUPER_ADMIN":
             navigate_to("SUPER_ADMIN")
@@ -124,11 +119,6 @@ def main(page: ft.Page):
 
     def handle_logout():
         current_user[0] = None
-        try:
-            if page.session.contains("user_session"):
-                page.session.remove("user_session")
-        except Exception:
-            pass
         navigate_to("LOGIN")
 
     # --- CONTROLE DE ROTAS ---
@@ -141,17 +131,7 @@ def main(page: ft.Page):
             empresa_link_id = 1
         navigate_to("REGISTER_STAFF", empresa_id=empresa_link_id)
     else:
-        saved_user = None
-        try:
-            if page.session.contains("user_session"):
-                saved_user = page.session.get("user_session")
-        except Exception:
-            pass
-
-        if saved_user:
-            handle_login_success(saved_user)
-        else:
-            navigate_to("LOGIN")
+        navigate_to("LOGIN")
 
 if __name__ == "__main__":
     ft.app(target=main)
