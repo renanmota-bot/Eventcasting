@@ -1,166 +1,126 @@
 import flet as ft
-from config.settings import (
-    COLOR_SURFACE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, 
-    COLOR_TEXT_SECONDARY, COLOR_SUCCESS, COLOR_ERROR
-)
-from services.developer_service import get_all_companies, create_company, get_all_users_global, toggle_user_status
+from database import execute_query
 
-def DeveloperView(page: ft.Page, on_back):
-    active_tab = "empresas"
-
-    txt_nome_fantasia = ft.TextField(
-        label="Nome Fantasia", 
-        border_color=COLOR_TEXT_SECONDARY, 
-        text_size=14,
-        color=COLOR_TEXT_PRIMARY,
-        text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY),
-        label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY)
-    )
-    txt_razao_social = ft.TextField(
-        label="Razão Social", 
-        border_color=COLOR_TEXT_SECONDARY, 
-        text_size=14,
-        color=COLOR_TEXT_PRIMARY,
-        text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY),
-        label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY)
-    )
-    txt_cnpj = ft.TextField(
-        label="CNPJ", 
-        border_color=COLOR_TEXT_SECONDARY, 
-        text_size=14,
-        color=COLOR_TEXT_PRIMARY,
-        text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY),
-        label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY)
-    )
+def DeveloperView(page: ft.Page, user=None, on_logout=None):
     
-    list_empresas = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
-    list_usuarios = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
-    content_area = ft.Container(expand=True)
+    # --- BUSCA DE DADOS NO POSTGRESQL ---
+    def carregar_empresas(filtro=""):
+        tabela_empresas.rows.clear()
+        query = """
+            SELECT id, nome_fantasia, razao_social, cnpj, COALESCE(ativa, true) as ativa 
+            FROM empresas 
+            WHERE nome_fantasia ILIKE %s OR cnpj ILIKE %s OR razao_social ILIKE %s
+            ORDER BY id DESC;
+        """
+        param = f"%{filtro}%"
+        empresas = execute_query(query, (param, param, param), fetch_all=True) or []
 
-    def reload_companies():
-        list_empresas.controls.clear()
-        companies = get_all_companies()
-        for comp in companies:
-            card = ft.Container(
-                bgcolor=COLOR_SURFACE,
-                padding=12,
-                border_radius=8,
-                content=ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    controls=[
-                        ft.Column(spacing=2, controls=[
-                            ft.Text(f"#{comp['id']} - {comp['nome_fantasia']}", weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
-                            ft.Text(f"CNPJ: {comp['cnpj']} | Status: {comp['status']}", size=12, color=COLOR_TEXT_SECONDARY)
-                        ]),
-                        ft.Container(
-                            content=ft.Text(comp['status'], size=10, color="#FFFFFF", weight=ft.FontWeight.BOLD),
-                            bgcolor=COLOR_SUCCESS if comp['status'] == 'ATIVO' else COLOR_ERROR,
-                            padding=6, border_radius=6
-                        )
-                    ]
-                )
-            )
-            list_empresas.controls.append(card)
-
-    def reload_users():
-        list_usuarios.controls.clear()
-        users = get_all_users_global()
-        for u in users:
-            card = ft.Container(
-                bgcolor=COLOR_SURFACE,
-                padding=12,
-                border_radius=8,
-                content=ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    controls=[
-                        ft.Column(spacing=2, controls=[
-                            ft.Text(f"{u['nome']} ({u['perfil']})", weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
-                            ft.Text(f"E-mail: {u['email']} | Empresa: {u['empresa_nome'] or 'Nenhuma'}", size=12, color=COLOR_TEXT_SECONDARY)
-                        ]),
-                        ft.ElevatedButton(
-                            "Bloquear" if u['status'] == 'ATIVO' else "Ativar",
-                            style=ft.ButtonStyle(
-                                bgcolor=COLOR_ERROR if u['status'] == 'ATIVO' else COLOR_SUCCESS, 
-                                color="#FFFFFF"
-                            ),
-                            on_click=lambda _, uid=u['id'], st=u['status']: handle_toggle_user(uid, st)
-                        )
-                    ]
-                )
-            )
-            list_usuarios.controls.append(card)
-
-    def handle_add_company(_):
-        if not txt_nome_fantasia.value.strip():
-            return
-        create_company(txt_nome_fantasia.value.strip(), txt_razao_social.value.strip(), txt_cnpj.value.strip())
-        txt_nome_fantasia.value = ""
-        txt_razao_social.value = ""
-        txt_cnpj.value = ""
-        reload_companies()
-        render_tab()
-
-    def handle_toggle_user(uid, current_status):
-        toggle_user_status(uid, current_status)
-        reload_users()
-        render_tab()
-
-    def set_tab(tab_name):
-        nonlocal active_tab
-        active_tab = tab_name
-        render_tab()
-
-    def render_tab():
-        if active_tab == "empresas":
-            btn_tab_empresas.style = ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000")
-            btn_tab_usuarios.style = ft.ButtonStyle(bgcolor=COLOR_SURFACE, color=COLOR_TEXT_PRIMARY)
-            content_area.content = ft.Column(
-                expand=True,
-                spacing=15,
-                controls=[
-                    ft.Container(
-                        bgcolor=COLOR_SURFACE, padding=15, border_radius=8,
-                        content=ft.Column(controls=[
-                            ft.Text("Cadastrar Nova Empresa", weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY),
-                            txt_nome_fantasia, txt_razao_social, txt_cnpj,
-                            ft.ElevatedButton(
-                                "Criar Empresa", 
-                                icon=ft.Icons.ADD, 
-                                style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"), 
-                                on_click=handle_add_company
+        for emp in empresas:
+            is_ativa = emp.get('ativa', True)
+            tabela_empresas.rows.append(
+                ft.DataRow(
+                    cells=[
+                        ft.DataCell(ft.Text(str(emp.get('id', '')))),
+                        ft.DataCell(ft.Text(emp.get('nome_fantasia') or emp.get('razao_social') or "Sem Nome", weight=ft.FontWeight.BOLD)),
+                        ft.DataCell(ft.Text(emp.get('cnpj') or "N/A")),
+                        ft.DataCell(
+                            ft.Text("Ativa" if is_ativa else "Bloqueada", color="#2A9D8F" if is_ativa else "#E76F51")
+                        ),
+                        ft.DataCell(
+                            ft.IconButton(
+                                ft.icons.BLOCK if is_ativa else ft.icons.CHECK_CIRCLE,
+                                icon_color="#E76F51" if is_ativa else "#2A9D8F",
+                                on_click=lambda e, eid=emp['id'], st=is_ativa: alternar_status(eid, st)
                             )
-                        ])
-                    ),
-                    list_empresas
-                ]
+                        )
+                    ]
+                )
             )
-        else:
-            btn_tab_empresas.style = ft.ButtonStyle(bgcolor=COLOR_SURFACE, color=COLOR_TEXT_PRIMARY)
-            btn_tab_usuarios.style = ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000")
-            content_area.content = list_usuarios
-        
         page.update()
 
-    btn_tab_empresas = ft.ElevatedButton("Empresas (Tenants)", on_click=lambda _: set_tab("empresas"))
-    btn_tab_usuarios = ft.ElevatedButton("Todos os Usuários", on_click=lambda _: set_tab("usuarios"))
+    def alternar_status(emp_id, status_atual):
+        execute_query("UPDATE empresas SET ativa = %s WHERE id = %s;", (not status_atual, emp_id), commit=True)
+        carregar_empresas(busca_empresa.value or "")
 
-    reload_companies()
-    reload_users()
-    render_tab()
+    def carregar_usuarios(filtro=""):
+        tabela_usuarios.rows.clear()
+        query = """
+            SELECT id, nome, email, perfil 
+            FROM usuarios 
+            WHERE nome ILIKE %s OR email ILIKE %s
+            ORDER BY id DESC;
+        """
+        param = f"%{filtro}%"
+        usuarios = execute_query(query, (param, param), fetch_all=True) or []
+
+        for usr in usuarios:
+            tabela_usuarios.rows.append(
+                ft.DataRow(
+                    cells=[
+                        ft.DataCell(ft.Text(str(usr.get('id', '')))),
+                        ft.DataCell(ft.Text(usr.get('nome') or "Sem Nome", weight=ft.FontWeight.BOLD)),
+                        ft.DataCell(ft.Text(usr.get('email') or "N/A")),
+                        ft.DataCell(ft.Chip(label=ft.Text(usr.get('perfil') or "STAFF"))),
+                        ft.DataCell(
+                            ft.IconButton(
+                                ft.icons.DELETE_FOREVER,
+                                icon_color="#E76F51",
+                                on_click=lambda e, uid=usr['id']: deletar_usr(uid)
+                            )
+                        )
+                    ]
+                )
+            )
+        page.update()
+
+    def deletar_usr(uid):
+        execute_query("DELETE FROM usuarios WHERE id = %s;", (uid,), commit=True)
+        carregar_usuarios(busca_usuario.value or "")
+
+    # Componentes de Tabelas
+    tabela_empresas = ft.DataTable(
+        columns=[
+            ft.DataColumn(ft.Text("ID")),
+            ft.DataColumn(ft.Text("Nome / Razão")),
+            ft.DataColumn(ft.Text("CNPJ")),
+            ft.DataColumn(ft.Text("Status")),
+            ft.DataColumn(ft.Text("Ações")),
+        ], rows=[]
+    )
+
+    tabela_usuarios = ft.DataTable(
+        columns=[
+            ft.DataColumn(ft.Text("ID")),
+            ft.DataColumn(ft.Text("Nome")),
+            ft.DataColumn(ft.Text("E-mail")),
+            ft.DataColumn(ft.Text("Perfil")),
+            ft.DataColumn(ft.Text("Ações")),
+        ], rows=[]
+    )
+
+    busca_empresa = ft.TextField(hint_text="Filtrar Empresas por Nome ou CNPJ...", on_change=lambda e: carregar_empresas(e.control.value), expand=True)
+    busca_usuario = ft.TextField(hint_text="Filtrar Usuários por Nome ou Email...", on_change=lambda e: carregar_usuarios(e.control.value), expand=True)
+
+    # Carga Inicial de dados
+    carregar_empresas()
+    carregar_usuarios()
+
+    tabs = ft.Tabs(
+        selected_index=0,
+        tabs=[
+            ft.Tab(text="Empresas (Tenants)", icon=ft.icons.BUSINESS, content=ft.Column([busca_empresa, ft.Column([tabela_empresas], scroll=ft.ScrollMode.AUTO)])),
+            ft.Tab(text="Usuários Globais", icon=ft.icons.PEOPLE, content=ft.Column([busca_usuario, ft.Column([tabela_usuarios], scroll=ft.ScrollMode.AUTO)])),
+        ],
+        expand=True
+    )
 
     return ft.Container(
-        expand=True,
-        padding=25,
-        content=ft.Column(
-            expand=True,
-            spacing=15,
-            controls=[
-                ft.Row(controls=[
-                    ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: on_back()),
-                    ft.Text("Painel do Desenvolvedor (Super Admin)", size=22, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
-                ]),
-                ft.Row(controls=[btn_tab_empresas, btn_tab_usuarios], spacing=10),
-                content_area
-            ]
-        )
+        content=ft.Column([
+            ft.Row([
+                ft.Text("Painel Master de Controle Total", size=22, weight="bold", color="white"),
+                ft.ElevatedButton("Sair", icon=ft.icons.LOGOUT, on_click=lambda e: on_logout() if on_logout else None)
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            tabs
+        ], spacing=20),
+        padding=20, expand=True, bgcolor="#0B132B"
     )
