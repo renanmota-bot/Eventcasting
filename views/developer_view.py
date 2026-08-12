@@ -117,10 +117,13 @@ def DeveloperView(page: ft.Page, user=None, on_logout=None):
     return ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Text("Painel Master de Controle Total", size=22, weight="bold", color="white"),
+                ft.Text("Painel Master — Controle Total do SaaS", size=22, weight="bold", color="white"),
                 ft.ElevatedButton("Sair", icon=ft.icons.LOGOUT, on_click=lambda e: on_logout() if on_logout else None)
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             tabs
         ], spacing=20),
         padding=20, expand=True, bgcolor="#0B132B"
     )
+
+# Alias de compatibilidade para garantir que funcione independentemente da chamada
+SuperAdminDashboardView = DeveloperView
