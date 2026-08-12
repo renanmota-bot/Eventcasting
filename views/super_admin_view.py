@@ -1,7 +1,7 @@
 import flet as ft
 from database import execute_query
 
-def DeveloperView(page: ft.Page, user=None, on_logout=None):
+def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None):
     
     # --- BUSCA DE DADOS NO POSTGRESQL ---
     def carregar_empresas(filtro=""):
@@ -77,7 +77,7 @@ def DeveloperView(page: ft.Page, user=None, on_logout=None):
         execute_query("DELETE FROM usuarios WHERE id = %s;", (uid,), commit=True)
         carregar_usuarios(busca_usuario.value or "")
 
-    # Componentes de Tabelas
+    # Componentes das Tabelas
     tabela_empresas = ft.DataTable(
         columns=[
             ft.DataColumn(ft.Text("ID")),
@@ -98,10 +98,10 @@ def DeveloperView(page: ft.Page, user=None, on_logout=None):
         ], rows=[]
     )
 
-    busca_empresa = ft.TextField(hint_text="Filtrar Empresas por Nome ou CNPJ...", on_change=lambda e: carregar_empresas(e.control.value), expand=True)
-    busca_usuario = ft.TextField(hint_text="Filtrar Usuários por Nome ou Email...", on_change=lambda e: carregar_usuarios(e.control.value), expand=True)
+    busca_empresa = ft.TextField(hint_text="Filtrar Empresas...", on_change=lambda e: carregar_empresas(e.control.value), expand=True)
+    busca_usuario = ft.TextField(hint_text="Filtrar Usuários...", on_change=lambda e: carregar_usuarios(e.control.value), expand=True)
 
-    # Carga Inicial de dados
+    # Carga Inicial de Dados
     carregar_empresas()
     carregar_usuarios()
 
@@ -117,13 +117,10 @@ def DeveloperView(page: ft.Page, user=None, on_logout=None):
     return ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Text("Painel Master — Controle Total do SaaS", size=22, weight="bold", color="white"),
+                ft.Text("NOVO PAINEL MASTER V2", size=22, weight="bold", color="white"),
                 ft.ElevatedButton("Sair", icon=ft.icons.LOGOUT, on_click=lambda e: on_logout() if on_logout else None)
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             tabs
         ], spacing=20),
         padding=20, expand=True, bgcolor="#0B132B"
     )
-
-# Alias de compatibilidade para garantir que funcione independentemente da chamada
-SuperAdminDashboardView = DeveloperView
