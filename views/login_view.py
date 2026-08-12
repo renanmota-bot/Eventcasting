@@ -1,103 +1,121 @@
 import flet as ft
-from config.settings import (
-    COLOR_SURFACE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, 
-    COLOR_TEXT_SECONDARY, COLOR_SUCCESS, COLOR_ERROR
-)
-from services.auth_service import authenticate_user
+import bcrypt
 
-def LoginView(page: ft.Page, on_login_success, on_navigate_register):
+try:
+    from database import execute_query
+except ImportError:
+    try:
+        from database.connection import execute_query
+    except ImportError:
+        from database.db import execute_query
+
+def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
     txt_email = ft.TextField(
-        label="E-mail", 
-        border_color=COLOR_TEXT_SECONDARY, 
-        text_size=14, 
-        color=COLOR_TEXT_PRIMARY,
-        text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY),
-        label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY)
+        label="E-mail",
+        width=320,
+        text_size=14,
+        autofocus=True
     )
+    
     txt_senha = ft.TextField(
-        label="Senha", 
-        password=True, 
+        label="Senha",
+        password=True,
         can_reveal_password=True,
-        border_color=COLOR_TEXT_SECONDARY, 
-        text_size=14, 
-        color=COLOR_TEXT_PRIMARY,
-        text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY),
-        label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY)
+        width=320,
+        text_size=14
     )
 
-    btn_login = ft.ElevatedButton(
-        "Entrar",
-        style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"),
-        width=320
+    # Botão de Login com estado de carregamento
+    btn_entrar = ft.ElevatedButton(
+        content=ft.Text("Entrar", size=16, weight="bold"),
+        style=ft.ButtonStyle(bgcolor="#4CC9F0", color="white"),
+        width=320,
+        height=45
     )
 
-    def handle_login(_):
-        email = txt_email.value.strip() if txt_email.value else ""
-        senha = txt_senha.value.strip() if txt_senha.value else ""
+    def handle_login(e):
+        email_val = txt_email.value.strip()
+        senha_val = txt_senha.value.strip()
 
-        if not email or not senha:
-            show_snack("Preencha e-mail e senha.")
+        if not email_val or not senha_val:
+            show_snack("Preencha e-mail e senha!")
             return
 
-        btn_login.disabled = True
-        btn_login.text = None
-        btn_login.content = ft.Row(
+        # Ativa o estado de carregamento visual
+        btn_entrar.disabled = True
+        btn_entrar.content = ft.Row(
             [
-                ft.ProgressRing(width=16, height=16, stroke_width=2, color="#000000"),
-                ft.Text("Autenticando...", color="#000000", weight=ft.FontWeight.BOLD)
+                ft.ProgressRing(width=20, height=20, stroke_width=2, color="white"),
+                ft.Text("Acessando...", size=14, weight="bold")
             ],
-            alignment=ft.MainAxisAlignment.CENTER
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=10
         )
         page.update()
 
-        user = authenticate_user(email, senha)
+        try:
+            query = "SELECT id, nome, email, senha, perfil, empresa_id FROM usuarios WHERE email = %s LIMIT 1;"
+            usuarios = execute_query(query, (email_val,), fetch_all=True)
 
-        if user:
-            show_snack(f"Bem-vindo, {user.get('nome')}!", is_error=False)
-            on_login_success(user)
-        else:
-            show_snack("E-mail ou senha incorretos / Conta inativa.")
-            btn_login.disabled = False
-            btn_login.content = None
-            btn_login.text = "Entrar"
-            page.update()
+            if not usuarios:
+                restaurar_botao()
+                show_snack("E-mail ou senha incorretos.")
+                return
 
-    btn_login.on_click = handle_login
+            usuario = usuarios[0]
+            senha_hash_db = usuario.get('senha', '')
 
-    def show_snack(msg, is_error=True):
-        snack = ft.SnackBar(
-            content=ft.Text(msg),
-            bgcolor=COLOR_ERROR if is_error else COLOR_SUCCESS
-        )
+            # Valida a senha cryptografada
+            senha_valida = False
+            if senha_hash_db.startswith('$2b$') or senha_hash_db.startswith('$2a$'):
+                senha_valida = bcrypt.checkpw(senha_val.encode('utf-8'), senha_hash_db.encode('utf-8'))
+            else:
+                senha_valida = (senha_val == senha_hash_db)
+
+            if senha_valida:
+                if on_login_success:
+                    on_login_success(usuario)
+            else:
+                restaurar_botao()
+                show_snack("E-mail ou senha incorretos.")
+
+        except Exception as ex:
+            restaurar_botao()
+            show_snack(f"Erro ao conectar: {ex}")
+
+    def restaurar_botao():
+        btn_entrar.disabled = False
+        btn_entrar.content = ft.Text("Entrar", size=16, weight="bold")
+        page.update()
+
+    def show_snack(msg):
+        snack = ft.SnackBar(content=ft.Text(msg), bgcolor="#E76F51")
         page.overlay.append(snack)
         snack.open = True
         page.update()
 
+    btn_entrar.on_click = handle_login
+
     return ft.Container(
+        content=ft.Column(
+            [
+                ft.Text("Event Casting", size=28, weight="bold", color="#4CC9F0"),
+                ft.Text("Acesse sua conta para continuar", size=14, color="#94A3B8"),
+                ft.Container(height=10),
+                txt_email,
+                txt_senha,
+                ft.Container(height=10),
+                btn_entrar,
+                ft.TextButton(
+                    "Criar conta de Staff",
+                    on_click=lambda _: on_navigate_register() if on_navigate_register else None
+                )
+            ],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=10
+        ),
         expand=True,
         alignment=ft.Alignment(0, 0),
-        content=ft.Container(
-            width=380,
-            bgcolor=COLOR_SURFACE,
-            padding=35,
-            border_radius=12,
-            content=ft.Column(
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=18,
-                tight=True,
-                controls=[
-                    ft.Text("EVENT CASTING", size=24, weight=ft.FontWeight.BOLD, color=COLOR_PRIMARY),
-                    ft.Text("Gestão de Equipes e Eventos", size=13, color=COLOR_TEXT_SECONDARY),
-                    ft.Divider(color="#334155"),
-                    txt_email,
-                    txt_senha,
-                    btn_login,
-                    ft.TextButton(
-                        "Cadastrar Empresa / Produtora",
-                        style=ft.ButtonStyle(color=COLOR_PRIMARY),
-                        on_click=lambda _: on_navigate_register()
-                    )
-                ]
-            )
-        )
+        bgcolor="#0B132B"
     )
