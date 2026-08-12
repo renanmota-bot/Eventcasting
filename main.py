@@ -1,3 +1,28 @@
+import flet as ft
+
+# Imports das Views
+from views.login_view import LoginView
+from views.register_view import RegisterView  # Cadastro de Staff (via link de convite)
+from views.register_company_view import RegisterCompanyView  # Cadastro de Empresa / Produtora
+from views.super_admin_view import SuperAdminDashboardView
+
+# Tenta importar os outros dashboards
+try:
+    from views.admin.dashboard import AdminDashboardView
+except ImportError:
+    try:
+        from views.admin_view import AdminDashboardView
+    except ImportError:
+        AdminDashboardView = None
+
+try:
+    from views.staff.dashboard import StaffDashboardView
+except ImportError:
+    try:
+        from views.staff_view import StaffDashboardView
+    except ImportError:
+        StaffDashboardView = None
+
 def main(page: ft.Page):
     page.title = "Event Casting — Gestão de Equipes e Eventos"
     page.theme_mode = ft.ThemeMode.DARK
@@ -16,11 +41,22 @@ def main(page: ft.Page):
                 LoginView(
                     page,
                     on_login_success=handle_login_success,
-                    on_navigate_register=lambda: navigate_to("REGISTER")
+                    on_navigate_register=lambda: navigate_to("REGISTER_COMPANY")
                 )
             )
 
-        elif route_name == "REGISTER":
+        elif route_name == "REGISTER_COMPANY":
+            # Abre o cadastro de Empresa/Produtora para pagamento
+            page.add(
+                RegisterCompanyView(
+                    page,
+                    on_back=lambda: navigate_to("LOGIN"),
+                    on_registered_success=handle_login_success
+                )
+            )
+
+        elif route_name == "REGISTER_STAFF":
+            # Abre o cadastro do Staff vindo do link com ID da empresa
             page.add(
                 RegisterView(
                     page,
@@ -65,7 +101,6 @@ def main(page: ft.Page):
 
     def handle_login_success(user):
         current_user[0] = user
-        # Salva a sessão permanentemente
         page.client_storage.set("user_session", user)
         
         perfil = user.get("perfil", "STAFF").upper()
@@ -76,28 +111,39 @@ def main(page: ft.Page):
         else:
             navigate_to("STAFF")
 
+    def handle_ghost_login(target_user):
+        current_user[0] = target_user
+        perfil = target_user.get("perfil", "ADMIN").upper()
+        if perfil == "ADMIN":
+            navigate_to("ADMIN")
+        elif perfil == "SUPER_ADMIN":
+            navigate_to("SUPER_ADMIN")
+        else:
+            navigate_to("STAFF")
+
     def handle_logout():
         current_user[0] = None
-        # Limpa a sessão salva ao clicar em Sair
         if page.client_storage.contains("user_session"):
             page.client_storage.remove("user_session")
         navigate_to("LOGIN")
 
-    # --- VERIFICAÇÃO DE SESSÃO AUTOMÁTICA ---
-    # Captura parâmetro de convite de empresa na URL (?empresa=ID)
+    # --- CONTROLE DE ROTAS ---
     empresa_link_id = 1
+    
+    # Se a URL contiver 'empresa=', entende que é um convite de Staff
     if page.route and "empresa=" in page.route:
         try:
             empresa_link_id = int(page.route.split("empresa=")[1].split("&")[0])
         except Exception:
             empresa_link_id = 1
-
-    if "register" in page.route:
-        navigate_to("REGISTER", empresa_id=empresa_link_id)
+        navigate_to("REGISTER_STAFF", empresa_id=empresa_link_id)
     else:
-        # Checa se o usuário já tem login salvo no dispositivo
+        # Checa login salvo no dispositivo
         saved_user = page.client_storage.get("user_session")
         if saved_user:
             handle_login_success(saved_user)
         else:
             navigate_to("LOGIN")
+
+if __name__ == "__main__":
+    ft.app(target=main)
