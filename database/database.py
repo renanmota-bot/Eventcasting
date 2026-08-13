@@ -1,37 +1,39 @@
+import os
 import psycopg2
-from psycopg2.extras import RealDictCursor
-from config.settings import DB_CONFIG
+from psycopg2 import pool
 
-def get_connection():
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Pool de conexões permanentes para evitar o delay de reconexão (mín 1, máx 10)
+db_pool = None
+
+def get_pool():
+    global db_pool
+    if db_pool is None and DATABASE_URL:
+        try:
+            db_pool = psycopg2.pool.SimpleConnectionPool(1, 10, DATABASE_URL)
+        except Exception as e:
+            print(f"Erro ao criar pool de conexões: {e}")
+    return db_pool
+
+def execute_query(query, params=None, fetch_all=False, commit=False):
+    pool_obj = get_pool()
+    conn = None
+    if pool_obj:
+        conn = pool_obj.getconn()
+    else:
+        conn = psycopg2.connect(DATABASE_URL)
+
     try:
-        conn = psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
-        return conn
-    except Exception as e:
-        print(f"Erro ao conectar ao PostgreSQL: {e}")
-        return None
-
-# Alias para compatibilidade com os demais arquivos do projeto
-get_db_connection = get_connection
-
-def execute_query(query, params=None, fetch_all=False, fetch_one=False, commit=False):
-    conn = get_connection()
-    if not conn:
-        return None
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(query, params or ())
-            result = None
-            if fetch_all:
-                result = cursor.fetchall()
-            elif fetch_one:
-                result = cursor.fetchone()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(query, params)
             if commit:
                 conn.commit()
-            return result
-    except Exception as e:
-        print(f"Erro na Query: {e}")
-        if commit:
-            conn.rollback()
-        return None
+            if fetch_all:
+                return cur.fetchall()
+            return None
     finally:
-        conn.close()
+        if pool_obj and conn:
+            pool_obj.putconn(conn)
+        elif conn:
+            conn.close()
