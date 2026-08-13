@@ -1,34 +1,18 @@
 import flet as ft
 
-# Imports das Views
 from views.login_view import LoginView
-from views.register_view import RegisterView  # Cadastro de Staff (via link de convite)
-from views.register_company_view import RegisterCompanyView  # Cadastro de Empresa / Produtora
+from views.register_view import RegisterView
+from views.register_company_view import RegisterCompanyView
 from views.super_admin_view import SuperAdminDashboardView
+from views.admin.dashboard import AdminDashboardView
+from views.staff.dashboard import StaffDashboardView
 
-# Tenta importar os outros dashboards
-try:
-    from views.admin.dashboard import AdminDashboardView
-except ImportError:
-    try:
-        from views.admin_view import AdminDashboardView
-    except ImportError:
-        AdminDashboardView = None
-
-try:
-    from views.staff.dashboard import StaffDashboardView
-except ImportError:
-    try:
-        from views.staff_view import StaffDashboardView
-    except ImportError:
-        StaffDashboardView = None
 
 def main(page: ft.Page):
     page.title = "Event Casting — Gestão de Equipes e Eventos"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.spacing = 0
-    page.scroll = ft.ScrollMode.AUTO
 
     current_user = [None]
 
@@ -54,15 +38,6 @@ def main(page: ft.Page):
                 )
             )
 
-        elif route_name == "REGISTER_STAFF":
-            page.add(
-                RegisterView(
-                    page,
-                    on_back=lambda: navigate_to("LOGIN"),
-                    default_empresa_id=empresa_id
-                )
-            )
-
         elif route_name == "SUPER_ADMIN":
             page.add(
                 SuperAdminDashboardView(
@@ -74,32 +49,30 @@ def main(page: ft.Page):
             )
 
         elif route_name == "ADMIN":
-            if AdminDashboardView:
-                page.add(
-                    AdminDashboardView(
-                        page,
-                        user=current_user[0],
-                        on_logout=handle_logout,
-                        on_navigate=navigate_to
-                    )
+            page.add(
+                AdminDashboardView(
+                    page,
+                    user=current_user[0],
+                    on_logout=handle_logout,
+                    on_navigate=navigate_to
                 )
+            )
 
         elif route_name == "STAFF":
-            if StaffDashboardView:
-                page.add(
-                    StaffDashboardView(
-                        page,
-                        user=current_user[0],
-                        on_logout=handle_logout,
-                        on_navigate=navigate_to
-                    )
+            page.add(
+                StaffDashboardView(
+                    page,
+                    user=current_user[0],
+                    on_logout=handle_logout,
+                    on_navigate=navigate_to
                 )
+            )
 
         page.update()
 
     def handle_login_success(user):
         current_user[0] = user
-        perfil = user.get("perfil", "STAFF").upper()
+        perfil = str(user.get("perfil", "STAFF")).upper()
         if perfil == "SUPER_ADMIN":
             navigate_to("SUPER_ADMIN")
         elif perfil == "ADMIN":
@@ -109,7 +82,7 @@ def main(page: ft.Page):
 
     def handle_ghost_login(target_user):
         current_user[0] = target_user
-        perfil = target_user.get("perfil", "ADMIN").upper()
+        perfil = str(target_user.get("perfil", "ADMIN")).upper()
         if perfil == "ADMIN":
             navigate_to("ADMIN")
         elif perfil == "SUPER_ADMIN":
@@ -121,17 +94,8 @@ def main(page: ft.Page):
         current_user[0] = None
         navigate_to("LOGIN")
 
-    # --- CONTROLE DE ROTAS ---
-    empresa_link_id = 1
-    
-    if page.route and "empresa=" in page.route:
-        try:
-            empresa_link_id = int(page.route.split("empresa=")[1].split("&")[0])
-        except Exception:
-            empresa_link_id = 1
-        navigate_to("REGISTER_STAFF", empresa_id=empresa_link_id)
-    else:
-        navigate_to("LOGIN")
+    navigate_to("LOGIN")
+
 
 if __name__ == "__main__":
     ft.app(target=main)

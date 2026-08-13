@@ -1,9 +1,4 @@
 import flet as ft
-import bcrypt
-import io
-import csv
-import base64
-import asyncio
 
 try:
     from database import execute_query
@@ -13,403 +8,486 @@ except ImportError:
     except ImportError:
         from database.db import execute_query
 
-# Função auxiliar de log de auditoria
-def registrar_log(ator, acao):
-    try:
-        execute_query("INSERT INTO auditoria (ator, acao) VALUES (%s, %s);", (ator, acao), commit=True)
-    except Exception:
-        pass
 
 def SuperAdminDashboardView(page: ft.Page, user=None, on_logout=None, on_ghost_login=None):
-    nome_admin = user.get('nome', 'Super Admin') if user else 'Super Admin'
-    
-    # --- Componentes Visuais de Estatísticas ---
-    txt_total_empresas = ft.Text("0", size=24, weight="bold", color="#4CC9F0")
-    txt_total_usuarios = ft.Text("0", size=24, weight="bold", color="#4CC9F0")
-    txt_receita_total = ft.Text("R$ 0,00", size=24, weight="bold", color="#2A9D8F")
+    nome_super = user.get('nome', 'Super Admin') if user else 'Super Admin'
 
-    def atualizar_estatisticas():
-        try:
-            res_emp = execute_query("SELECT COUNT(*) as qtd FROM empresas;", fetch_all=True)
-            res_usr = execute_query("SELECT COUNT(*) as qtd FROM usuarios;", fetch_all=True)
-            res_fin = execute_query("SELECT SUM(valor) as total FROM pagamentos WHERE status = 'PAGO';", fetch_all=True)
+    # --- INICIALIZAÇÃO DE TABELAS ---
+    def init_super_db():
+        q_schema = """
+            ALTER TABLE empresas ADD COLUMN IF NOT EXISTS status VARCHAR(30) DEFAULT 'ATIVO';
+            ALTER TABLE empresas ADD COLUMN IF NOT EXISTS plano VARCHAR(50) DEFAULT 'MENSAL';
+            ALTER TABLE empresas ADD COLUMN IF NOT EXISTS valor_plano NUMERIC(10,2) DEFAULT 100.00;
             
-            if res_emp: txt_total_empresas.value = str(res_emp[0].get('qtd', 0))
-            if res_usr: txt_total_usuarios.value = str(res_usr[0].get('qtd', 0))
-            if res_fin and res_fin[0].get('total'):
-                txt_receita_total.value = f"R$ {float(res_fin[0]['total']):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except Exception:
-            pass
+            CREATE TABLE IF NOT EXISTS chamados_suporte (
+                id SERIAL PRIMARY KEY,
+                empresa_id INT,
+                assunto VARCHAR(200) NOT NULL,
+                categoria VARCHAR(100) DEFAULT 'Geral',
+                prioridade VARCHAR(20) DEFAULT 'MÉDIA',
+                status VARCHAR(30) DEFAULT 'ABERTO',
+                data_criacao TIMESTAMP DEFAULT NOW()
+            );
 
-    # --- Broadcast (Aviso Global) ---
-    txt_aviso_global = ft.TextField(label="Disparar Aviso Global para todos os clientes...", expand=True, text_size=14)
-    
-    def salvar_aviso(e):
-        mensagem = txt_aviso_global.value.strip()
-        try:
-            execute_query("UPDATE avisos SET ativo = false;", commit=True)
-            if mensagem:
-                execute_query("INSERT INTO avisos (mensagem) VALUES (%s);", (mensagem,), commit=True)
-                registrar_log(nome_admin, f"Disparou aviso global: {mensagem[:30]}...")
-                page.snack_bar = ft.SnackBar(ft.Text("Aviso global emitido!"), bgcolor="#2A9D8F")
-            else:
-                registrar_log(nome_admin, "Limpou o aviso global.")
-                page.snack_bar = ft.SnackBar(ft.Text("Aviso global removido!"), bgcolor="#F4A261")
-            page.snack_bar.open = True
-            page.update()
-        except Exception as ex:
-            print(ex)
-
-    linha_broadcast = ft.Row([
-        txt_aviso_global, 
-        ft.ElevatedButton("Emitir / Limpar", on_click=salvar_aviso, style=ft.ButtonStyle(bgcolor="#E76F51", color="white"))
-    ])
-
-    # --- Lógica de Empresas ---
-    def carregar_empresas(filtro=""):
-        tabela_empresas.rows.clear()
-        query = "SELECT id, nome_fantasia, razao_social, cnpj, COALESCE(ativa, true) as ativa FROM empresas WHERE nome_fantasia ILIKE %s ORDER BY id DESC;"
-        try:
-            empresas = execute_query(query, (f"%{filtro}%",), fetch_all=True) or []
-            for emp in empresas:
-                is_ativa = emp.get('ativa', True)
-                tabela_empresas.rows.append(
-                    ft.DataRow(cells=[
-                        ft.DataCell(ft.Text(str(emp.get('id', '')))),
-                        ft.DataCell(ft.Text(emp.get('nome_fantasia') or emp.get('razao_social') or "Sem Nome", weight=ft.FontWeight.BOLD)),
-                        ft.DataCell(ft.Text(emp.get('cnpj') or "N/A")),
-                        ft.DataCell(ft.Text("Ativa" if is_ativa else "Bloqueada", color="#2A9D8F" if is_ativa else "#E76F51")),
-                        ft.DataCell(
-                            ft.Row([
-                                ft.ElevatedButton("Bloquear" if is_ativa else "Ativar", style=ft.ButtonStyle(color="white", bgcolor="#E76F51" if is_ativa else "#2A9D8F"), on_click=lambda e, eid=emp['id'], st=is_ativa: alternar_status_empresa(eid, st))
-                            ])
-                        )
-                    ])
-                )
-        except Exception: pass
-        page.update()
-
-    def alternar_status_empresa(emp_id, status_atual):
-        try:
-            execute_query("UPDATE empresas SET ativa = %s WHERE id = %s;", (not status_atual, emp_id), commit=True)
-            registrar_log(nome_admin, f"Alterou status da empresa ID {emp_id} para {not status_atual}")
-        except Exception: pass
-        carregar_empresas()
-
-    # --- Modal Nova Empresa ---
-    txt_nome_fantasia = ft.TextField(label="Nome Fantasia", text_size=14)
-    txt_razao_social = ft.TextField(label="Razão Social", text_size=14)
-    txt_cnpj = ft.TextField(label="CNPJ", text_size=14)
-    txt_nome_responsavel = ft.TextField(label="Nome do Dono/Admin", text_size=14)
-    txt_email = ft.TextField(label="E-mail de Login", text_size=14)
-    txt_senha = ft.TextField(label="Senha", password=True, can_reveal_password=True, text_size=14)
-
-    def salvar_nova_empresa(e):
-        nome, razao, cnpj = txt_nome_fantasia.value.strip(), txt_razao_social.value.strip(), txt_cnpj.value.strip()
-        nome_resp, email, senha_pura = txt_nome_responsavel.value.strip(), txt_email.value.strip(), txt_senha.value.strip()
-
-        if not nome and not razao: return
-        if not email or not senha_pura: return
-
-        senha_hash = bcrypt.hashpw(senha_pura.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        query = """
-            WITH nova_empresa AS (
-                INSERT INTO empresas (nome_fantasia, razao_social, cnpj, ativa, plano_id) 
-                VALUES (%s, %s, %s, true, 1) RETURNING id
-            )
-            INSERT INTO usuarios (nome, email, senha, perfil, empresa_id)
-            SELECT %s, %s, %s, 'ADMIN', id FROM nova_empresa;
+            CREATE TABLE IF NOT EXISTS chamados_interacoes (
+                id SERIAL PRIMARY KEY,
+                chamado_id INT NOT NULL,
+                remetente_tipo VARCHAR(20) NOT NULL,
+                mensagem TEXT NOT NULL,
+                data_envio TIMESTAMP DEFAULT NOW()
+            );
         """
         try:
-            execute_query(query, (nome or razao, razao or nome, cnpj, nome_resp or "Admin", email, senha_hash), commit=True)
-            registrar_log(nome_admin, f"Cadastrou nova empresa: {nome or razao}")
+            execute_query(q_schema, commit=True)
         except Exception as ex:
-            print(f"Erro ao salvar: {ex}")
+            print(f"Notice schema: {ex}")
 
-        txt_nome_fantasia.value = txt_razao_social.value = txt_cnpj.value = ""
-        txt_nome_responsavel.value = txt_email.value = txt_senha.value = ""
-        
-        dialog_nova_empresa.open = False
-        carregar_empresas()
-        carregar_usuarios()
-        atualizar_estatisticas()
-        page.update()
+    init_super_db()
 
-    def fechar_dialog_nova_empresa(e):
-        dialog_nova_empresa.open = False
-        page.update()
+    # --- CONTROLES DE INTERFACE ---
+    txt_total_empresas = ft.Text("0", size=20, weight="bold", color="#4CC9F0")
+    txt_total_usuarios = ft.Text("0", size=20, weight="bold", color="#2A9D8F")
+    txt_faturamento_saas = ft.Text("R$ 0,00", size=20, weight="bold", color="#E76F51")
 
-    dialog_nova_empresa = ft.AlertDialog(
-        title=ft.Text("Cadastrar Tenant e Login"),
-        content=ft.Column([
-            ft.Text("Dados da Empresa", weight="bold", color="#4CC9F0"),
-            txt_nome_fantasia, txt_razao_social, txt_cnpj, ft.Divider(),
-            ft.Text("Dados de Acesso (Admin)", weight="bold", color="#4CC9F0"),
-            txt_nome_responsavel, txt_email, txt_senha
-        ], tight=True, spacing=10, scroll=ft.ScrollMode.AUTO),
-        actions=[ft.TextButton("Cancelar", on_click=fechar_dialog_nova_empresa), ft.ElevatedButton("Salvar", on_click=salvar_nova_empresa)]
+    list_empresas = ft.Column(spacing=10)
+    list_usuarios = ft.Column(spacing=10)
+    list_chamados = ft.Column(spacing=10)
+
+    txt_busca_empresa = ft.TextField(label="Buscar Produtora por Nome ou CNPJ", text_size=12, border_radius=8, expand=True)
+
+    txt_novo_nome_emp = ft.TextField(label="Nome da Produtora *", text_size=12, border_radius=8)
+    txt_novo_cnpj_emp = ft.TextField(label="CNPJ / CPF *", text_size=12, border_radius=8)
+    txt_novo_email_admin = ft.TextField(label="E-mail do Admin *", text_size=12, border_radius=8)
+    txt_nova_senha_admin = ft.TextField(label="Senha Inicial *", password=True, can_reveal_password=True, text_size=12, border_radius=8)
+
+    txt_busca_usuario = ft.TextField(label="Buscar Usuário por Nome ou E-mail", text_size=12, border_radius=8, expand=True)
+    dd_filtro_perfil_usr = ft.Dropdown(
+        label="Perfil", value="TODOS", text_size=12, border_radius=8, width=150,
+        options=[
+            ft.dropdown.Option("TODOS", "Todos"),
+            ft.dropdown.Option("ADMIN", "Admin"),
+            ft.dropdown.Option("STAFF", "Staff"),
+            ft.dropdown.Option("SUPER_ADMIN", "Super Admin")
+        ]
     )
 
-    def abrir_modal_empresa(e):
-        page.overlay.append(dialog_nova_empresa)
-        dialog_nova_empresa.open = True
+    txt_usr_nome = ft.TextField(label="Nome Completo *", text_size=12, border_radius=8)
+    txt_usr_email = ft.TextField(label="E-mail *", text_size=12, border_radius=8)
+    txt_usr_senha = ft.TextField(label="Senha *", password=True, can_reveal_password=True, text_size=12, border_radius=8)
+    dd_usr_perfil = ft.Dropdown(
+        label="Perfil *", value="STAFF", text_size=12, border_radius=8,
+        options=[
+            ft.dropdown.Option("STAFF", "Staff"),
+            ft.dropdown.Option("ADMIN", "Admin"),
+            ft.dropdown.Option("SUPER_ADMIN", "Super Admin")
+        ]
+    )
+    txt_usr_empresa_id = ft.TextField(label="ID Empresa (Opcional)", value="1", text_size=12, border_radius=8)
+
+    dd_filtro_status_chamado = ft.Dropdown(
+        label="Filtrar por Status", text_size=12, border_radius=8, width=160, value="TODOS",
+        options=[
+            ft.dropdown.Option("TODOS", "TODOS"),
+            ft.dropdown.Option("ABERTO", "ABERTO"),
+            ft.dropdown.Option("EM ANDAMENTO", "EM ANDAMENTO"),
+            ft.dropdown.Option("RESOLVIDO", "RESOLVIDO")
+        ]
+    )
+
+    def show_snack(msg, is_error=True):
+        snack = ft.SnackBar(content=ft.Text(msg, color="white", weight="bold"), bgcolor="#E76F51" if is_error else "#2A9D8F")
+        page.overlay.append(snack)
+        snack.open = True
         page.update()
 
-    # --- Modal Gerenciar Usuário (Editar Senha e Dados) ---
-    usuario_em_edicao = [None]
-    txt_edit_nome = ft.TextField(label="Nome", text_size=14)
-    txt_edit_email = ft.TextField(label="E-mail", text_size=14)
-    dd_edit_perfil = ft.Dropdown(
-        label="Perfil",
-        options=[ft.dropdown.Option("SUPER_ADMIN"), ft.dropdown.Option("ADMIN"), ft.dropdown.Option("STAFF")],
-        text_size=14
-    )
-    txt_edit_senha = ft.TextField(label="Nova Senha (deixe em branco para manter)", password=True, can_reveal_password=True, text_size=14)
-
-    def salvar_edicao_usuario(e):
-        uid = usuario_em_edicao[0]
-        if not uid: return
-        nome, email, perfil, senha = txt_edit_nome.value.strip(), txt_edit_email.value.strip(), dd_edit_perfil.value, txt_edit_senha.value.strip()
-
+    def carregar_empresas():
+        list_empresas.controls.clear()
         try:
-            if senha:
-                senha_hash = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                execute_query("UPDATE usuarios SET nome=%s, email=%s, perfil=%s, senha=%s WHERE id=%s;", (nome, email, perfil, senha_hash, uid), commit=True)
+            busca = txt_busca_empresa.value.strip() if txt_busca_empresa.value else ""
+            if busca:
+                query = "SELECT id, COALESCE(nome, 'Sem Nome') as nome, COALESCE(cnpj, 'N/A') as cnpj, COALESCE(status, 'ATIVO') as status, COALESCE(plano, 'MENSAL') as plano, COALESCE(valor_plano, 100.00) as valor_plano FROM empresas WHERE LOWER(nome) LIKE LOWER(%s) OR cnpj LIKE %s ORDER BY id DESC;"
+                empresas = execute_query(query, (f"%{busca}%", f"%{busca}%"), fetch_all=True) or []
             else:
-                execute_query("UPDATE usuarios SET nome=%s, email=%s, perfil=%s WHERE id=%s;", (nome, email, perfil, uid), commit=True)
-            registrar_log(nome_admin, f"Editou dados/senha do usuário ID {uid}")
-        except Exception as ex:
-            print(f"Erro ao editar usuário: {ex}")
+                query = "SELECT id, COALESCE(nome, 'Sem Nome') as nome, COALESCE(cnpj, 'N/A') as cnpj, COALESCE(status, 'ATIVO') as status, COALESCE(plano, 'MENSAL') as plano, COALESCE(valor_plano, 100.00) as valor_plano FROM empresas ORDER BY id DESC;"
+                empresas = execute_query(query, fetch_all=True) or []
 
-        dialog_editar_usuario.open = False
-        carregar_usuarios()
-        page.update()
+            txt_total_empresas.value = str(len(empresas))
+            res_usr = execute_query("SELECT COUNT(*) as qtd FROM usuarios;", fetch_all=True)
+            if res_usr: txt_total_usuarios.value = str(res_usr[0].get('qtd', 0))
 
-    def fechar_modal_edicao(e):
-        dialog_editar_usuario.open = False
-        page.update()
+            mrr_total = sum([float(e.get('valor_plano') or 100.00) for e in empresas if str(e.get('status') or 'ATIVO').upper() == 'ATIVO'])
+            txt_faturamento_saas.value = f"R$ {mrr_total:.2f}"
 
-    dialog_editar_usuario = ft.AlertDialog(
-        title=ft.Text("Gerenciar Usuário"),
-        content=ft.Column([
-            txt_edit_nome, txt_edit_email, dd_edit_perfil, ft.Divider(), txt_edit_senha
-        ], tight=True, spacing=10),
-        actions=[ft.TextButton("Cancelar", on_click=fechar_modal_edicao), ft.ElevatedButton("Salvar", on_click=salvar_edicao_usuario)]
-    )
+            if not empresas:
+                list_empresas.controls.append(ft.Text("Nenhuma empresa cadastrada.", color="#94A3B8"))
+            else:
+                for emp in empresas:
+                    emp_id = emp['id']
+                    emp_nome = emp['nome']
+                    emp_cnpj = emp['cnpj']
+                    st = str(emp.get('status') or 'ATIVO').upper()
+                    plano_atual = str(emp.get('plano') or 'MENSAL').upper()
+                    valor_atual = float(emp.get('valor_plano') or 100.00)
 
-    def abrir_modal_edicao_usuario(usr):
-        usuario_em_edicao[0] = usr['id']
-        txt_edit_nome.value = usr.get('nome', '')
-        txt_edit_email.value = usr.get('email', '')
-        dd_edit_perfil.value = usr.get('perfil', 'STAFF')
-        txt_edit_senha.value = ""
-        
-        page.overlay.append(dialog_editar_usuario)
-        dialog_editar_usuario.open = True
-        page.update()
+                    dd_status = ft.Dropdown(
+                        value=st, width=130, text_size=12,
+                        options=[
+                            ft.dropdown.Option("ATIVO", "ATIVO"),
+                            ft.dropdown.Option("INADIMPLENTE", "INADIMPLENTE"),
+                            ft.dropdown.Option("DEGUSTAÇÃO", "DEGUSTAÇÃO"),
+                            ft.dropdown.Option("BLOQUEADO", "BLOQUEADO")
+                        ]
+                    )
 
-    # --- Lógica de Usuários ---
-    def carregar_usuarios(filtro=""):
-        tabela_usuarios.rows.clear()
-        query = "SELECT id, nome, email, perfil, empresa_id FROM usuarios WHERE nome ILIKE %s OR email ILIKE %s ORDER BY id DESC;"
-        try:
-            usuarios = execute_query(query, (f"%{filtro}%", f"%{filtro}%"), fetch_all=True) or []
-            for usr in usuarios:
-                tabela_usuarios.rows.append(
-                    ft.DataRow(cells=[
-                        ft.DataCell(ft.Text(str(usr.get('id', '')))),
-                        ft.DataCell(ft.Text(usr.get('nome') or "Sem Nome", weight=ft.FontWeight.BOLD)),
-                        ft.DataCell(ft.Text(usr.get('email') or "N/A")),
-                        ft.DataCell(ft.Chip(label=ft.Text(usr.get('perfil') or "STAFF"))),
-                        ft.DataCell(
-                            ft.Row([
-                                ft.ElevatedButton("Gerenciar", style=ft.ButtonStyle(color="white", bgcolor="#F4A261"), on_click=lambda e, u=usr: abrir_modal_edicao_usuario(u)),
-                                ft.ElevatedButton("Acessar", style=ft.ButtonStyle(color="white", bgcolor="#4CC9F0"), on_click=lambda e, u=usr: disparar_ghost_login(u)),
-                                ft.ElevatedButton("Excluir", style=ft.ButtonStyle(color="white", bgcolor="#D62828"), on_click=lambda e, uid=usr['id']: deletar_usr(uid))
-                            ])
+                    dd_plano = ft.Dropdown(
+                        value=plano_atual, width=130, text_size=12,
+                        options=[
+                            ft.dropdown.Option("MENSAL", "MENSAL"),
+                            ft.dropdown.Option("ANUAL", "ANUAL"),
+                            ft.dropdown.Option("GRATUITO", "GRATUITO")
+                        ]
+                    )
+
+                    txt_val_plano = ft.TextField(value=f"{valor_atual:.2f}", width=100, text_size=12, label="Valor R$")
+
+                    def salvar_assinatura(e_id, in_st, in_pl, in_vl):
+                        try:
+                            nv_v = float(in_vl.value.replace(',', '.'))
+                            execute_query("UPDATE empresas SET status = %s, plano = %s, valor_plano = %s WHERE id = %s;", (in_st.value, in_pl.value, nv_v, e_id), commit=True)
+                            show_snack("Assinatura atualizada!", is_error=False)
+                            carregar_empresas()
+                        except Exception as ex:
+                            show_snack(f"Erro ao salvar: {ex}")
+
+                    def fazer_ghost_login(e_id):
+                        u_admin = execute_query("SELECT id, nome, email, perfil, empresa_id FROM usuarios WHERE empresa_id = %s AND perfil = 'ADMIN' LIMIT 1;", (e_id,), fetch_all=True)
+                        if u_admin and on_ghost_login:
+                            on_ghost_login(u_admin[0])
+                        else:
+                            show_snack("Empresa não possui Admin cadastrado.")
+
+                    list_empresas.controls.append(
+                        ft.Container(
+                            bgcolor="#1E293B", padding=14, border_radius=10,
+                            content=ft.Column([
+                                ft.Row([
+                                    ft.Text(f"🏢 {emp_nome} (ID: #{emp_id})", weight="bold", color="white", size=15),
+                                    ft.Text(f"Status: {st}", color="#2A9D8F" if st in ["ATIVO", "DEGUSTAÇÃO"] else "#E76F51", weight="bold", size=12)
+                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                ft.Text(f"CNPJ/CPF: {emp_cnpj}", size=12, color="#94A3B8"),
+                                ft.Divider(color="#334155"),
+                                ft.Text("Gerenciar Assinatura SaaS:", size=12, weight="bold", color="#4CC9F0"),
+                                ft.Row([
+                                    dd_status, dd_plano, txt_val_plano,
+                                    ft.ElevatedButton("Salvar Alterações", style=ft.ButtonStyle(bgcolor="#2A9D8F", color="white"), height=38, on_click=lambda _, eid=emp_id, st_i=dd_status, pl_i=dd_plano, vl_i=txt_val_plano: salvar_assinatura(eid, st_i, pl_i, vl_i))
+                                ], spacing=8, scroll=ft.ScrollMode.AUTO),
+                                ft.Row([
+                                    ft.ElevatedButton("Entrar no Painel (Ghost Login) 👁️", style=ft.ButtonStyle(bgcolor="#4CC9F0", color="black"), height=36, on_click=lambda _, eid=emp_id: fazer_ghost_login(eid))
+                                ])
+                            ], spacing=8)
                         )
-                    ])
-                )
-        except Exception: pass
+                    )
+        except Exception as ex:
+            list_empresas.controls.append(ft.Text(f"Erro ao carregar empresas: {ex}", color="#E76F51"))
         page.update()
 
-    def disparar_ghost_login(usr):
-        registrar_log(nome_admin, f"Tentou Ghost Login no usuário ID {usr['id']} ({usr['email']})")
-        if on_ghost_login:
-            on_ghost_login(usr)
-        else:
-            page.snack_bar = ft.SnackBar(ft.Text(f"Sessão ativada para {usr['email']}. Configure on_ghost_login no main.py para trocar a tela."), bgcolor="#F4A261")
-            page.snack_bar.open = True
-            page.update()
-
-    def deletar_usr(uid):
+    def handle_criar_empresa_manual(e):
+        if not all([txt_novo_nome_emp.value, txt_novo_cnpj_emp.value, txt_novo_email_admin.value, txt_nova_senha_admin.value]):
+            show_snack("Preencha todos os campos!")
+            return
         try:
-            execute_query("DELETE FROM usuarios WHERE id = %s;", (uid,), commit=True)
-            registrar_log(nome_admin, f"Deletou usuário ID {uid}")
+            q_emp = "INSERT INTO empresas (nome, cnpj, status, plano, valor_plano) VALUES (%s, %s, 'ATIVO', 'MENSAL', 100.00) RETURNING id;"
+            res_emp = execute_query(q_emp, (txt_novo_nome_emp.value.strip(), txt_novo_cnpj_emp.value.strip()), fetch_all=True, commit=True)
+            if res_emp:
+                new_id = res_emp[0]['id']
+                execute_query("INSERT INTO usuarios (empresa_id, nome, email, senha, perfil, status) VALUES (%s, %s, %s, %s, 'ADMIN', 'ATIVO');", (new_id, f"Admin {txt_novo_nome_emp.value.strip()}", txt_novo_email_admin.value.strip(), txt_nova_senha_admin.value.strip()), commit=True)
+                show_snack("Produtora e Admin criados com sucesso!", is_error=False)
+                txt_novo_nome_emp.value = ""
+                txt_novo_cnpj_emp.value = ""
+                txt_novo_email_admin.value = ""
+                txt_nova_senha_admin.value = ""
+                carregar_empresas()
+        except Exception as ex:
+            show_snack(f"Erro ao criar empresa: {ex}")
+
+    def carregar_usuarios():
+        list_usuarios.controls.clear()
+        try:
+            busca = txt_busca_usuario.value.strip() if txt_busca_usuario.value else ""
+            p_filtro = dd_filtro_perfil_usr.value
+
+            params = []
+            where_clauses = []
+
+            if busca:
+                where_clauses.append("(LOWER(nome) LIKE LOWER(%s) OR LOWER(email) LIKE LOWER(%s))")
+                params.extend([f"%{busca}%", f"%{busca}%"])
+
+            if p_filtro and p_filtro != "TODOS":
+                where_clauses.append("perfil = %s")
+                params.append(p_filtro)
+
+            where_str = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+            query = f"SELECT id, nome, email, perfil, empresa_id FROM usuarios{where_str} ORDER BY id DESC LIMIT 100;"
+
+            usrs = execute_query(query, tuple(params) if params else None, fetch_all=True) or []
+
+            if not usrs:
+                list_usuarios.controls.append(ft.Text("Nenhum usuário encontrado.", color="#94A3B8"))
+            else:
+                for u in usrs:
+                    u_id = u['id']
+                    u_nome = u['nome']
+                    u_email = u['email']
+                    u_perf = str(u.get('perfil', 'STAFF')).upper()
+                    emp_str = f"Empresa ID: {u['empresa_id']}" if u.get('empresa_id') else "Master SaaS"
+
+                    txt_ed_nome = ft.TextField(value=u_nome, text_size=12, label="Nome")
+                    txt_ed_email = ft.TextField(value=u_email, text_size=12, label="E-mail")
+                    dd_ed_perfil = ft.Dropdown(
+                        value=u_perf, text_size=12, width=130,
+                        options=[
+                            ft.dropdown.Option("STAFF", "STAFF"),
+                            ft.dropdown.Option("ADMIN", "ADMIN"),
+                            ft.dropdown.Option("SUPER_ADMIN", "SUPER_ADMIN")
+                        ]
+                    )
+
+                    def salvar_edicao_usuario(uid, in_n, in_e, in_p):
+                        try:
+                            execute_query("UPDATE usuarios SET nome = %s, email = %s, perfil = %s WHERE id = %s;", (in_n.value.strip(), in_e.value.strip(), in_p.value, uid), commit=True)
+                            show_snack("Usuário atualizado com sucesso!", is_error=False)
+                            carregar_usuarios()
+                        except Exception as ex:
+                            show_snack(f"Erro ao salvar usuário: {ex}")
+
+                    def deletar_usuario(uid):
+                        try:
+                            execute_query("DELETE FROM usuarios WHERE id = %s;", (uid,), commit=True)
+                            show_snack("Usuário removido!", is_error=False)
+                            carregar_usuarios()
+                        except Exception as ex:
+                            show_snack(f"Erro ao excluir usuário: {ex}")
+
+                    list_usuarios.controls.append(
+                        ft.Container(
+                            bgcolor="#1E293B", padding=12, border_radius=8,
+                            content=ft.Column([
+                                ft.Row([
+                                    ft.Text(f"👤 #{u_id} — {u_nome}", weight="bold", color="white", size=14),
+                                    ft.Text(f"Perfil: {u_perf}", color="#4CC9F0", weight="bold", size=12)
+                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                ft.Text(f"E-mail: {u_email} | {emp_str}", size=11, color="#94A3B8"),
+                                ft.Row([txt_ed_nome, txt_ed_email, dd_ed_perfil], spacing=8, scroll=ft.ScrollMode.AUTO),
+                                ft.Row([
+                                    ft.ElevatedButton("Salvar Alterações", style=ft.ButtonStyle(bgcolor="#2A9D8F", color="white"), height=34, on_click=lambda _, uid=u_id, n_i=txt_ed_nome, e_i=txt_ed_email, p_i=dd_ed_perfil: salvar_edicao_usuario(uid, n_i, e_i, p_i)),
+                                    ft.ElevatedButton("Acessar (Ghost) 👁️", style=ft.ButtonStyle(bgcolor="#4CC9F0", color="black"), height=34, on_click=lambda _, usr=u: on_ghost_login(usr) if on_ghost_login else None),
+                                    ft.ElevatedButton("Excluir 🗑️", style=ft.ButtonStyle(bgcolor="#E76F51", color="white"), height=34, on_click=lambda _, uid=u_id: deletar_usuario(uid))
+                                ], spacing=8)
+                            ], spacing=6)
+                        )
+                    )
+        except Exception as ex:
+            list_usuarios.controls.append(ft.Text(f"Erro ao carregar usuários: {ex}", color="#E76F51"))
+        page.update()
+
+    def handle_adicionar_usuario(e):
+        if not all([txt_usr_nome.value, txt_usr_email.value, txt_usr_senha.value]):
+            show_snack("Preencha Nome, E-mail e Senha!")
+            return
+        try:
+            emp_id_val = int(txt_usr_empresa_id.value) if txt_usr_empresa_id.value and txt_usr_empresa_id.value.isdigit() else 1
+            query = "INSERT INTO usuarios (empresa_id, nome, email, senha, perfil, status) VALUES (%s, %s, %s, %s, %s, 'ATIVO');"
+            execute_query(query, (emp_id_val, txt_usr_nome.value.strip(), txt_usr_email.value.strip(), txt_usr_senha.value.strip(), dd_usr_perfil.value), commit=True)
+            show_snack("Novo usuário cadastrado!", is_error=False)
+            txt_usr_nome.value = ""
+            txt_usr_email.value = ""
+            txt_usr_senha.value = ""
             carregar_usuarios()
-            atualizar_estatisticas()
-        except Exception: pass
+        except Exception as ex:
+            show_snack(f"Erro ao cadastrar usuário: {ex}")
 
-    # --- Lógica Financeira (Recebimentos) ---
-    def carregar_financeiro():
-        tabela_financeiro.rows.clear()
+    txt_busca_usuario.on_change = lambda _: carregar_usuarios()
+    dd_filtro_perfil_usr.on_change = lambda _: carregar_usuarios()
+
+    # --- QUERY TOTALMENTE INDEPENDENTE PARA TRAZER ABSOLUTAMENTE TODOS OS CHAMADOS ---
+    def carregar_chamados():
+        list_chamados.controls.clear()
         try:
-            query = """
-                SELECT p.id, e.nome_fantasia, p.valor, p.data_vencimento, p.status 
-                FROM pagamentos p
-                LEFT JOIN empresas e ON p.empresa_id = e.id
-                ORDER BY p.id DESC LIMIT 100;
-            """
-            faturas = execute_query(query, fetch_all=True) or []
-            for fat in faturas:
-                tabela_financeiro.rows.append(
-                    ft.DataRow(cells=[
-                        ft.DataCell(ft.Text(str(fat.get('id', '')))),
-                        ft.DataCell(ft.Text(fat.get('nome_fantasia') or "N/A")),
-                        ft.DataCell(ft.Text(f"R$ {float(fat.get('valor', 0)):.2f}")),
-                        ft.DataCell(ft.Text(str(fat.get('data_vencimento', '')))),
-                        ft.DataCell(ft.Text(fat.get('status', 'PENDENTE'), color="#2A9D8F" if fat.get('status') == 'PAGO' else "#E76F51", weight=ft.FontWeight.BOLD))
-                    ])
-                )
-        except Exception:
-            tabela_financeiro.rows.append(ft.DataRow(cells=[ft.DataCell(ft.Text("-")), ft.DataCell(ft.Text("Tabela 'pagamentos' vazia ou inexistente.", color="#F4A261")), ft.DataCell(ft.Text("-")), ft.DataCell(ft.Text("-")), ft.DataCell(ft.Text("-"))]))
+            st_filtro = dd_filtro_status_chamado.value
+            
+            if st_filtro and st_filtro != "TODOS":
+                query = "SELECT id, empresa_id, assunto, categoria, prioridade, status, data_criacao FROM chamados_suporte WHERE status = %s ORDER BY id DESC;"
+                chams = execute_query(query, (st_filtro,), fetch_all=True) or []
+            else:
+                query = "SELECT id, empresa_id, assunto, categoria, prioridade, status, data_criacao FROM chamados_suporte ORDER BY id DESC;"
+                chams = execute_query(query, fetch_all=True) or []
+
+            if not chams:
+                list_chamados.controls.append(ft.Text("Nenhum chamado pendente ou registrado.", color="#94A3B8"))
+            else:
+                for ch in chams:
+                    ch_id = ch['id']
+                    assunto = ch['assunto']
+                    e_id = ch.get('empresa_id')
+                    
+                    # Busca nome da empresa se existir
+                    emp_nome = f"Empresa ID #{e_id}" if e_id else "Produtora Geral"
+                    if e_id:
+                        e_res = execute_query("SELECT nome FROM empresas WHERE id = %s;", (e_id,), fetch_all=True)
+                        if e_res and e_res[0].get('nome'):
+                            emp_nome = e_res[0]['nome']
+
+                    st = str(ch['status']).upper()
+                    prio = str(ch.get('prioridade', 'MÉDIA')).upper()
+
+                    dd_st_chamado = ft.Dropdown(
+                        value=st, width=150, text_size=12,
+                        options=[
+                            ft.dropdown.Option("ABERTO", "ABERTO"),
+                            ft.dropdown.Option("EM ANDAMENTO", "EM ANDAMENTO"),
+                            ft.dropdown.Option("RESOLVIDO", "RESOLVIDO"),
+                            ft.dropdown.Option("FECHADO", "FECHADO")
+                        ]
+                    )
+
+                    txt_resp_chamado = ft.TextField(label="Escrever Resposta...", multiline=True, min_lines=1, max_lines=3, text_size=12, border_radius=8, expand=True)
+                    col_interacoes = ft.Column(spacing=6)
+
+                    def carregar_interacoes(cid, container_col):
+                        container_col.controls.clear()
+                        inters = execute_query("SELECT remetente_tipo, mensagem, data_envio FROM chamados_interacoes WHERE chamado_id = %s ORDER BY id ASC;", (cid,), fetch_all=True) or []
+                        for i in inters:
+                            rem = "Sua Resposta (Super Admin)" if i['remetente_tipo'] == 'SUPER_ADMIN' else "Produtora"
+                            bg_c = "#2A9D8F" if i['remetente_tipo'] == 'SUPER_ADMIN' else "#0F172A"
+                            container_col.controls.append(
+                                ft.Container(
+                                    bgcolor=bg_c, padding=8, border_radius=6,
+                                    content=ft.Column([
+                                        ft.Text(rem, weight="bold", size=10, color="#94A3B8"),
+                                        ft.Text(i['mensagem'], color="white", size=12)
+                                    ], spacing=2)
+                                )
+                            )
+                        page.update()
+
+                    def responder_e_atualizar(cid, txt_in, dd_st, col_int):
+                        if not txt_in.value.strip():
+                            show_snack("Digite uma resposta para enviar!")
+                            return
+                        try:
+                            execute_query("INSERT INTO chamados_interacoes (chamado_id, remetente_tipo, mensagem) VALUES (%s, 'SUPER_ADMIN', %s);", (cid, txt_in.value.strip()), commit=True)
+                            execute_query("UPDATE chamados_suporte SET status = %s WHERE id = %s;", (dd_st.value, cid), commit=True)
+                            show_snack("Resposta enviada!", is_error=False)
+                            txt_in.value = ""
+                            carregar_interacoes(cid, col_int)
+                        except Exception as ex:
+                            show_snack(f"Erro ao responder chamado: {ex}")
+
+                    carregar_interacoes(ch_id, col_interacoes)
+
+                    list_chamados.controls.append(
+                        ft.Container(
+                            bgcolor="#1E293B", padding=14, border_radius=10,
+                            content=ft.Column([
+                                ft.Row([
+                                    ft.Text(f"🎫 Chamado #{ch_id} — {assunto}", weight="bold", color="white", size=15),
+                                    ft.Text(f"Prioridade: {prio}", color="#E76F51" if prio in ["ALTA", "URGENTE"] else "#2A9D8F", weight="bold", size=12)
+                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                ft.Text(f"Produtora: {emp_nome} | Categoria: {ch.get('categoria', 'Geral')}", size=12, color="#94A3B8"),
+                                ft.Divider(color="#334155"),
+                                col_interacoes,
+                                ft.Divider(color="#334155"),
+                                ft.Row([
+                                    dd_st_chamado,
+                                    txt_resp_chamado,
+                                    ft.ElevatedButton("Enviar Resposta 📩", style=ft.ButtonStyle(bgcolor="#4CC9F0", color="black"), height=42, on_click=lambda _, cid=ch_id, tin=txt_resp_chamado, stin=dd_st_chamado, colin=col_interacoes: responder_e_atualizar(cid, tin, stin, colin))
+                                ], spacing=8)
+                            ], spacing=8)
+                        )
+                    )
+        except Exception as ex:
+            list_chamados.controls.append(ft.Text(f"Erro ao carregar chamados: {ex}", color="#E76F51"))
         page.update()
 
-    def exportar_para_excel(e):
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=';')
-        writer.writerow(["ID", "Referência/Empresa", "Valor", "Data", "Status"])
-        for row in tabela_financeiro.rows:
-            linha = [cell.content.value for cell in row.cells]
-            writer.writerow(linha)
-        csv_string = output.getvalue()
-        b64 = base64.b64encode(csv_string.encode('utf-8-sig')).decode('utf-8')
-        
-        url_data = f"data:text/csv;base64,{b64}"
-        try:
-            asyncio.create_task(page.launch_url(url_data))
-        except Exception:
-            try:
-                page.launch_url(url_data)
-            except Exception as ex:
-                print(f"Erro ao disparar download: {ex}")
+    dd_filtro_status_chamado.on_change = lambda _: carregar_chamados()
 
-    # --- Lógica de Planos ---
-    def carregar_planos():
-        tabela_planos.rows.clear()
-        try:
-            planos = execute_query("SELECT id, nome, limite_usuarios, preco FROM planos ORDER BY id ASC;", fetch_all=True) or []
-            for p in planos:
-                tabela_planos.rows.append(
-                    ft.DataRow(cells=[
-                        ft.DataCell(ft.Text(str(p.get('id', '')))),
-                        ft.DataCell(ft.Text(p.get('nome', ''), weight="bold")),
-                        ft.DataCell(ft.Text("Ilimitado" if p.get('limite_usuarios', 0) >= 99999 else str(p.get('limite_usuarios', '0')))),
-                        ft.DataCell(ft.Text(f"R$ {float(p.get('preco', 0)):.2f}"))
-                    ])
-                )
-        except Exception:
-            tabela_planos.rows.append(ft.DataRow(cells=[ft.DataCell(ft.Text("-")), ft.DataCell(ft.Text("Execute o SQL de planos.")), ft.DataCell(ft.Text("-")), ft.DataCell(ft.Text("-"))]))
+    area_conteudo = ft.Container(expand=True)
+
+    def set_aba(aba_nome):
+        if aba_nome == "EMPRESAS":
+            carregar_empresas()
+            area_conteudo.content = ft.Column([
+                ft.Row([
+                    ft.Text("Produtoras / Assinantes SaaS", weight="bold", size=15, color="#4CC9F0"),
+                    txt_busca_empresa,
+                    ft.ElevatedButton("Buscar", style=ft.ButtonStyle(bgcolor="#2A9D8F", color="white"), on_click=lambda _: carregar_empresas())
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Divider(color="#334155"),
+                list_empresas
+            ], spacing=10, scroll=ft.ScrollMode.AUTO)
+
+        elif aba_nome == "CRIAR_EMPRESA":
+            area_conteudo.content = ft.Column([
+                ft.Text("Cadastrar Nova Produtora Manualmente", weight="bold", size=15, color="#4CC9F0"),
+                txt_novo_nome_emp, txt_novo_cnpj_emp, txt_novo_email_admin, txt_nova_senha_admin,
+                ft.ElevatedButton("Cadastrar Produtora & Admin", style=ft.ButtonStyle(bgcolor="#2A9D8F", color="white"), on_click=handle_criar_empresa_manual, width=380)
+            ], spacing=10, scroll=ft.ScrollMode.AUTO)
+
+        elif aba_nome == "USUARIOS":
+            carregar_usuarios()
+            area_conteudo.content = ft.Column([
+                ft.Text("Gestão de Usuários Globais", weight="bold", size=15, color="#4CC9F0"),
+                ft.Row([txt_busca_usuario, dd_filtro_perfil_usr], spacing=8),
+                ft.Divider(color="#334155"),
+                ft.Text("Cadastrar Novo Usuário:", weight="bold", size=13, color="white"),
+                ft.Row([txt_usr_nome, txt_usr_email, txt_usr_senha], spacing=8),
+                ft.Row([dd_usr_perfil, txt_usr_empresa_id], spacing=8),
+                ft.ElevatedButton("Adicionar Usuário", style=ft.ButtonStyle(bgcolor="#2A9D8F", color="white"), on_click=handle_adicionar_usuario, width=320),
+                ft.Divider(color="#334155"),
+                list_usuarios
+            ], spacing=10, scroll=ft.ScrollMode.AUTO)
+
+        elif aba_nome == "CHAMADOS":
+            carregar_chamados()
+            area_conteudo.content = ft.Column([
+                ft.Row([
+                    ft.Text("Central de Chamados & Tickets de Suporte", weight="bold", size=15, color="#4CC9F0"),
+                    dd_filtro_status_chamado
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Divider(color="#334155"),
+                list_chamados
+            ], spacing=10, scroll=ft.ScrollMode.AUTO)
+
         page.update()
 
-    # --- Lógica de Auditoria ---
-    def carregar_auditoria():
-        tabela_auditoria.rows.clear()
-        try:
-            logs = execute_query("SELECT id, ator, acao, data_hora FROM auditoria ORDER BY id DESC LIMIT 50;", fetch_all=True) or []
-            for l in logs:
-                tabela_auditoria.rows.append(
-                    ft.DataRow(cells=[
-                        ft.DataCell(ft.Text(str(l.get('id', '')))),
-                        ft.DataCell(ft.Text(str(l.get('data_hora', ''))[:16])),
-                        ft.DataCell(ft.Text(l.get('ator', ''), color="#F4A261")),
-                        ft.DataCell(ft.Text(l.get('acao', '')))
-                    ])
-                )
-        except Exception:
-            tabela_auditoria.rows.append(ft.DataRow(cells=[ft.DataCell(ft.Text("-")), ft.DataCell(ft.Text("-")), ft.DataCell(ft.Text("Execute o SQL de auditoria.")), ft.DataCell(ft.Text("-"))]))
-        page.update()
-
-    # --- Criação das Tabelas ---
-    tabela_empresas = ft.DataTable(columns=[ft.DataColumn(ft.Text("ID")), ft.DataColumn(ft.Text("Empresa")), ft.DataColumn(ft.Text("CNPJ")), ft.DataColumn(ft.Text("Status")), ft.DataColumn(ft.Text("Ações"))], rows=[])
-    tabela_usuarios = ft.DataTable(columns=[ft.DataColumn(ft.Text("ID")), ft.DataColumn(ft.Text("Nome")), ft.DataColumn(ft.Text("E-mail")), ft.DataColumn(ft.Text("Perfil")), ft.DataColumn(ft.Text("Ações"))], rows=[])
-    tabela_financeiro = ft.DataTable(columns=[ft.DataColumn(ft.Text("ID")), ft.DataColumn(ft.Text("Referência / Empresa")), ft.DataColumn(ft.Text("Valor")), ft.DataColumn(ft.Text("Vencimento")), ft.DataColumn(ft.Text("Status"))], rows=[])
-    tabela_planos = ft.DataTable(columns=[ft.DataColumn(ft.Text("ID")), ft.DataColumn(ft.Text("Nome do Plano")), ft.DataColumn(ft.Text("Limite de Usuários")), ft.DataColumn(ft.Text("Preço Base"))], rows=[])
-    tabela_auditoria = ft.DataTable(columns=[ft.DataColumn(ft.Text("ID")), ft.DataColumn(ft.Text("Data/Hora")), ft.DataColumn(ft.Text("Usuário (Ator)")), ft.DataColumn(ft.Text("Ação Realizada"))], rows=[])
-
-    btn_add_empresa = ft.ElevatedButton("+ Nova Empresa", on_click=abrir_modal_empresa, style=ft.ButtonStyle(bgcolor="#2A9D8F", color="white"))
+    btn_aba_emp = ft.ElevatedButton("Empresas & Assinaturas", on_click=lambda _: set_aba("EMPRESAS"), height=36)
+    btn_aba_add = ft.ElevatedButton("+ Nova Empresa", on_click=lambda _: set_aba("CRIAR_EMPRESA"), height=36)
+    btn_aba_usr = ft.ElevatedButton("Usuários Globais", on_click=lambda _: set_aba("USUARIOS"), height=36)
+    btn_aba_chamados = ft.ElevatedButton("Chamados 🎫", on_click=lambda _: set_aba("CHAMADOS"), height=36)
 
     carregar_empresas()
-    carregar_usuarios()
-    atualizar_estatisticas()
+    set_aba("EMPRESAS")
 
-    # --- Conteúdo das Abas ---
-    tab_empresas_content = ft.Column([
-        ft.Row([
-            ft.TextField(hint_text="Buscar empresas...", on_change=lambda e: carregar_empresas(e.control.value), expand=True),
-            btn_add_empresa
-        ]), 
-        ft.Column([tabela_empresas], scroll=ft.ScrollMode.AUTO)
-    ])
-    
-    tab_usuarios_content = ft.Column([ft.Row([ft.TextField(hint_text="Buscar usuários...", on_change=lambda e: carregar_usuarios(e.control.value), expand=True)]), ft.Column([tabela_usuarios], scroll=ft.ScrollMode.AUTO)])
-    tab_financeiro_content = ft.Column([ft.Row([ft.Text("Gestão de Recebimentos e Faturas", size=18, weight="bold", expand=True), ft.ElevatedButton("Exportar Excel (CSV)", on_click=exportar_para_excel, style=ft.ButtonStyle(bgcolor="#1E293B", color="#4CC9F0"))]), ft.Column([tabela_financeiro], scroll=ft.ScrollMode.AUTO)])
-    tab_planos_content = ft.Column([ft.Text("Gestão de Limites e Tiers do SaaS", size=18, weight="bold"), ft.Column([tabela_planos], scroll=ft.ScrollMode.AUTO)])
-    tab_auditoria_content = ft.Column([ft.Text("Visão Raio-X (50 últimos registros)", size=18, weight="bold"), ft.Column([tabela_auditoria], scroll=ft.ScrollMode.AUTO)])
-
-    content_area = ft.Container(content=tab_empresas_content, expand=True)
-
-    def set_tab(index):
-        for btn in [btn_tab1, btn_tab2, btn_tab3, btn_tab4, btn_tab5]:
-            btn.style = ft.ButtonStyle(color="#94A3B8", bgcolor="transparent")
-        
-        if index == 0:
-            btn_tab1.style = ft.ButtonStyle(color="#4CC9F0", bgcolor="#1E293B")
-            content_area.content = tab_empresas_content
-        elif index == 1:
-            btn_tab2.style = ft.ButtonStyle(color="#4CC9F0", bgcolor="#1E293B")
-            content_area.content = tab_usuarios_content
-        elif index == 2:
-            btn_tab3.style = ft.ButtonStyle(color="#4CC9F0", bgcolor="#1E293B")
-            carregar_financeiro()
-            content_area.content = tab_financeiro_content
-        elif index == 3:
-            btn_tab4.style = ft.ButtonStyle(color="#4CC9F0", bgcolor="#1E293B")
-            carregar_planos()
-            content_area.content = tab_planos_content
-        elif index == 4:
-            btn_tab5.style = ft.ButtonStyle(color="#4CC9F0", bgcolor="#1E293B")
-            carregar_auditoria()
-            content_area.content = tab_auditoria_content
-        page.update()
-
-    btn_tab1 = ft.ElevatedButton("Empresas", on_click=lambda _: set_tab(0), style=ft.ButtonStyle(color="#4CC9F0", bgcolor="#1E293B"))
-    btn_tab2 = ft.ElevatedButton("Usuários", on_click=lambda _: set_tab(1), style=ft.ButtonStyle(color="#94A3B8", bgcolor="transparent"))
-    btn_tab3 = ft.ElevatedButton("Financeiro", on_click=lambda _: set_tab(2), style=ft.ButtonStyle(color="#94A3B8", bgcolor="transparent"))
-    btn_tab4 = ft.ElevatedButton("Planos", on_click=lambda _: set_tab(3), style=ft.ButtonStyle(color="#94A3B8", bgcolor="transparent"))
-    btn_tab5 = ft.ElevatedButton("Auditoria", on_click=lambda _: set_tab(4), style=ft.ButtonStyle(color="#94A3B8", bgcolor="transparent"))
-
-    tab_header = ft.Row([btn_tab1, btn_tab2, btn_tab3, btn_tab4, btn_tab5], spacing=10)
-
-    # Dashboard Cards
-    dev_stats_row = ft.Row([
-        ft.Container(content=ft.Column([ft.Text("Total Empresas", color="#94A3B8"), txt_total_empresas]), bgcolor="#1E293B", padding=15, border_radius=8, expand=True),
-        ft.Container(content=ft.Column([ft.Text("Total Usuários", color="#94A3B8"), txt_total_usuarios]), bgcolor="#1E293B", padding=15, border_radius=8, expand=True),
-        ft.Container(content=ft.Column([ft.Text("Receita (Pagos)", color="#94A3B8"), txt_receita_total]), bgcolor="#1E293B", padding=15, border_radius=8, expand=True)
-    ], spacing=20)
+    cards_metricas = ft.ResponsiveRow([
+        ft.Container(content=ft.Column([ft.Text("Total de Produtoras", color="#94A3B8", size=11), txt_total_empresas]), bgcolor="#1E293B", padding=12, border_radius=8, col={"xs": 4, "sm": 4}),
+        ft.Container(content=ft.Column([ft.Text("Total de Usuários", color="#94A3B8", size=11), txt_total_usuarios]), bgcolor="#1E293B", padding=12, border_radius=8, col={"xs": 4, "sm": 4}),
+        ft.Container(content=ft.Column([ft.Text("MRR Ativo (SaaS)", color="#94A3B8", size=11), txt_faturamento_saas]), bgcolor="#1E293B", padding=12, border_radius=8, col={"xs": 4, "sm": 4}),
+    ], spacing=10)
 
     return ft.Container(
+        expand=True, bgcolor="#0B132B", padding=12,
         content=ft.Column([
             ft.Row([
-                ft.Text("Painel Master — Controle Total do SaaS", size=22, weight="bold", color="white"),
-                ft.ElevatedButton("Sair", on_click=lambda e: on_logout() if on_logout else None)
+                ft.Column([
+                    ft.Text(f"Painel Máster SaaS — {nome_super}", size=18, weight="bold", color="white"),
+                    ft.Text("Coração da Plataforma: Assinaturas, Chamados e Gestão Global", size=11, color="#94A3B8")
+                ], expand=True),
+                ft.IconButton(ft.Icons.LOGOUT, icon_color="#E76F51", tooltip="Sair", on_click=lambda e: on_logout() if on_logout else None)
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            dev_stats_row,
-            linha_broadcast,
-            tab_header,
-            content_area
-        ], spacing=15, scroll=ft.ScrollMode.AUTO),
-        padding=20, 
-        expand=True, 
-        bgcolor="#0B132B"
+            cards_metricas,
+            ft.Row([btn_aba_emp, btn_aba_add, btn_aba_usr, btn_aba_chamados], spacing=8, scroll=ft.ScrollMode.AUTO),
+            ft.Divider(color="#334155", height=1),
+            area_conteudo
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
     )

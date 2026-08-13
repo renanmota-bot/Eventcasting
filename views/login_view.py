@@ -1,6 +1,5 @@
 import flet as ft
 import bcrypt
-import threading
 
 try:
     from database import execute_query
@@ -9,6 +8,7 @@ except ImportError:
         from database.connection import execute_query
     except ImportError:
         from database.db import execute_query
+
 
 def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
     txt_email = ft.TextField(
@@ -33,12 +33,42 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
         height=45
     )
 
-    def processar_login():
-        email_val = txt_email.value.strip()
-        senha_val = txt_senha.value.strip()
+    def show_snack(msg, is_error=True):
+        snack = ft.SnackBar(
+            content=ft.Text(msg, color="white", weight="bold"), 
+            bgcolor="#E76F51" if is_error else "#2A9D8F",
+            duration=3000
+        )
+        page.overlay.append(snack)
+        snack.open = True
+        page.update()
+
+    def restaurar_botao():
+        btn_entrar.disabled = False
+        btn_entrar.content = ft.Text("Entrar", size=16, weight="bold")
+        page.update()
+
+    def handle_login(e=None):
+        email_val = txt_email.value.strip() if txt_email.value else ""
+        senha_val = txt_senha.value.strip() if txt_senha.value else ""
+
+        if not email_val or not senha_val:
+            show_snack("Preencha e-mail e senha para entrar.")
+            return
+
+        btn_entrar.disabled = True
+        btn_entrar.content = ft.Row(
+            [
+                ft.ProgressRing(width=20, height=20, stroke_width=2, color="white"),
+                ft.Text("Verificando...", size=14, weight="bold")
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=10
+        )
+        page.update()
 
         try:
-            query = "SELECT id, nome, email, senha, perfil, empresa_id FROM usuarios WHERE email = %s LIMIT 1;"
+            query = "SELECT id, nome, email, senha, perfil, empresa_id FROM usuarios WHERE LOWER(email) = LOWER(%s) LIMIT 1;"
             usuarios = execute_query(query, (email_val,), fetch_all=True)
 
             if not usuarios:
@@ -56,11 +86,6 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
                 senha_valida = (senha_val == senha_hash_db)
 
             if senha_valida:
-                try:
-                    page.session.set("user_session", usuario)
-                except Exception:
-                    pass
-
                 if on_login_success:
                     on_login_success(usuario)
             else:
@@ -69,40 +94,10 @@ def LoginView(page: ft.Page, on_login_success=None, on_navigate_register=None):
 
         except Exception as ex:
             restaurar_botao()
-            show_snack(f"Erro ao conectar: {ex}")
+            show_snack(f"Erro de conexão: {ex}")
 
-    def handle_login(e):
-        email_val = txt_email.value.strip()
-        senha_val = txt_senha.value.strip()
-
-        if not email_val or not senha_val:
-            show_snack("Preencha e-mail e senha!")
-            return
-
-        btn_entrar.disabled = True
-        btn_entrar.content = ft.Row(
-            [
-                ft.ProgressRing(width=20, height=20, stroke_width=2, color="white"),
-                ft.Text("Acessando...", size=14, weight="bold")
-            ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            spacing=10
-        )
-        page.update()
-
-        threading.Thread(target=processar_login, daemon=True).start()
-
-    def restaurar_botao():
-        btn_entrar.disabled = False
-        btn_entrar.content = ft.Text("Entrar", size=16, weight="bold")
-        page.update()
-
-    def show_snack(msg):
-        snack = ft.SnackBar(content=ft.Text(msg), bgcolor="#E76F51")
-        page.overlay.append(snack)
-        snack.open = True
-        page.update()
-
+    txt_email.on_submit = handle_login
+    txt_senha.on_submit = handle_login
     btn_entrar.on_click = handle_login
 
     return ft.Container(

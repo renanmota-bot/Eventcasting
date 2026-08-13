@@ -1,196 +1,108 @@
-import base64
-import threading
-import cv2
 import flet as ft
-from config.settings import (
-    COLOR_SURFACE, COLOR_PRIMARY, COLOR_TEXT_PRIMARY, 
-    COLOR_TEXT_SECONDARY, COLOR_SUCCESS, COLOR_ERROR
-)
-from services.auth_service import register_staff_user
-from services.verification_service import generate_verification_code, send_email_code, verify_code
-from utils.validators import is_valid_cpf, is_valid_email, is_valid_whatsapp, is_strong_password
+import base64
 
-def RegisterView(page: ft.Page, on_back, default_empresa_id=1):
-    foto_base64_str = [None]
+try:
+    from database import execute_query
+except ImportError:
+    try:
+        from database.connection import execute_query
+    except ImportError:
+        from database.db import execute_query
 
-    avatar_img = ft.CircleAvatar(
-        content=ft.Icon(ft.Icons.PERSON, size=40, color=COLOR_TEXT_SECONDARY),
-        bgcolor="#0F172A", radius=45
+def RegisterView(page: ft.Page, on_back=None, default_empresa_id=1):
+    doc_base64 = [None]
+
+    txt_nome = ft.TextField(label="Nome Completo *", text_size=13, border_radius=8)
+    txt_email = ft.TextField(label="E-mail *", text_size=13, border_radius=8)
+    txt_senha = ft.TextField(label="Senha *", password=True, can_reveal_password=True, text_size=13, border_radius=8)
+    txt_cpf = ft.TextField(label="CPF (Obrigatório) *", text_size=13, border_radius=8)
+    txt_rg = ft.TextField(label="RG (Obrigatório) *", text_size=13, border_radius=8)
+    txt_whatsapp = ft.TextField(label="WhatsApp *", text_size=13, border_radius=8)
+
+    lbl_doc_status = ft.Text("Nenhum documento anexado", size=12, color="#E76F51", weight="bold")
+
+    def handle_file_picker_result(e: ft.FilePickerResultEvent):
+        if e.files and len(e.files) > 0:
+            file_picked = e.files[0]
+            try:
+                # Caso esteja executando via Web ou Local com caminho do arquivo
+                if file_picked.path:
+                    with open(file_picked.path, "rb") as f:
+                        doc_base64[0] = base64.b64encode(f.read()).decode('utf-8')
+                lbl_doc_status.value = f"✓ Documento anexado: {file_picked.name}"
+                lbl_doc_status.color = "#2A9D8F"
+                page.update()
+            except Exception as ex:
+                show_snack(f"Erro ao ler arquivo: {ex}")
+
+    file_picker = ft.FilePicker(on_result=handle_file_picker_result)
+    page.overlay.append(file_picker)
+
+    btn_anexar_doc = ft.ElevatedButton(
+        "Anexar Foto do RG/CPF (Obrigatório)",
+        icon=ft.Icons.UPLOAD_FILE,
+        style=ft.ButtonStyle(bgcolor="#1E293B", color="#4CC9F0"),
+        on_click=lambda _: file_picker.pick_files(allow_multiple=False, allowed_extensions=["png", "jpg", "jpeg", "pdf"])
     )
-
-    def open_camera_thread():
-        try:
-            cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-            if not cap.isOpened(): cap = cv2.VideoCapture(0)
-            if not cap.isOpened():
-                show_snack("Nenhuma câmera encontrada.")
-                return
-
-            show_snack("Câmera aberta! ESPAÇO para tirar a foto.", is_error=False)
-
-            while True:
-                ret, frame = cap.read()
-                if not ret: break
-
-                cv2.imshow("Tirar Selfie — ESPACO: Capturar | ESC: Sair", frame)
-                key = cv2.waitKey(1) & 0xFF
-
-                if key == 32:  # ESPAÇO
-                    _, buffer = cv2.imencode('.jpg', frame)
-                    encoded_bytes = base64.b64encode(buffer).decode('utf-8')
-                    foto_base64_str[0] = encoded_bytes
-                    avatar_img.content = None
-                    avatar_img.foreground_image_src = f"data:image/jpeg;base64,{encoded_bytes}"
-                    page.update()
-                    show_snack("Selfie capturada!", is_error=False)
-                    break
-                elif key == 27:  # ESC
-                    break
-
-            cap.release()
-            cv2.destroyAllWindows()
-        except Exception as ex:
-            show_snack(f"Erro ao abrir câmera: {ex}")
-
-    def take_selfie(_):
-        threading.Thread(target=open_camera_thread, daemon=True).start()
-
-    txt_empresa_id = ft.TextField(
-        label="Código da Produtora (Fixado)", value=str(default_empresa_id), read_only=True,
-        border_color=COLOR_TEXT_SECONDARY, text_size=14, color=COLOR_PRIMARY,
-        text_style=ft.TextStyle(color=COLOR_PRIMARY, weight=ft.FontWeight.BOLD), label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY)
-    )
-    txt_nome = ft.TextField(label="Nome Completo", border_color=COLOR_TEXT_SECONDARY, text_size=14, color=COLOR_TEXT_PRIMARY, text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY), label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY))
-    txt_email = ft.TextField(label="E-mail Real", border_color=COLOR_TEXT_SECONDARY, text_size=14, color=COLOR_TEXT_PRIMARY, text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY), label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY))
-    txt_senha = ft.TextField(label="Senha Forte", hint_text="Ex: Mín 8 chars, A-Z, a-z, 0-9, @#$", password=True, can_reveal_password=True, border_color=COLOR_TEXT_SECONDARY, text_size=14, color=COLOR_TEXT_PRIMARY, text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY), label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY))
-
-    def format_cpf(e):
-        val = "".join(filter(str.isdigit, e.control.value or ""))[:11]
-        formatted = val
-        if len(val) > 3: formatted = val[:3] + "." + val[3:]
-        if len(val) > 6: formatted = val[:3] + "." + val[3:6] + "." + val[6:]
-        if len(val) > 9: formatted = val[:3] + "." + val[3:6] + "." + val[6:9] + "-" + val[9:]
-        e.control.value = formatted
-        page.update()
-
-    def format_phone(e):
-        val = "".join(filter(str.isdigit, e.control.value or ""))[:11]
-        formatted = val
-        if len(val) > 2: formatted = "(" + val[:2] + ") " + val[2:]
-        if len(val) > 7: formatted = "(" + val[:2] + ") " + val[2:7] + "-" + val[7:]
-        e.control.value = formatted
-        page.update()
-
-    txt_cpf = ft.TextField(label="CPF Válido", max_length=14, border_color=COLOR_TEXT_SECONDARY, text_size=14, color=COLOR_TEXT_PRIMARY, text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY), label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY), on_change=format_cpf)
-    txt_whatsapp = ft.TextField(label="WhatsApp (DDD + Número)", max_length=15, border_color=COLOR_TEXT_SECONDARY, text_size=14, color=COLOR_TEXT_PRIMARY, text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY), label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY), on_change=format_phone)
-    txt_chave_pix = ft.TextField(label="Chave Pix", border_color=COLOR_TEXT_SECONDARY, text_size=14, color=COLOR_TEXT_PRIMARY, text_style=ft.TextStyle(color=COLOR_TEXT_PRIMARY), label_style=ft.TextStyle(color=COLOR_TEXT_SECONDARY))
-
-    btn_tirar_selfie = ft.ElevatedButton("Tirar Selfie (Câmera)", icon=ft.Icons.CAMERA_ALT, style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"), on_click=take_selfie)
-
-    txt_codigo_validacao = ft.TextField(label="Código de 6 dígitos", max_length=6, text_align=ft.TextAlign.CENTER, text_size=18)
-
-    def fechar_dialog(e=None):
-        dlg_confirmacao.open = False
-        page.update()
-
-    def confirm_registration(_):
-        email_val = txt_email.value.strip()
-        if not verify_code(email_val, txt_codigo_validacao.value or ""):
-            show_snack("Código de verificação incorreto!")
-            return
-
-        success = register_staff_user(
-            empresa_id=int(txt_empresa_id.value),
-            nome=txt_nome.value.strip(),
-            email=email_val,
-            senha=txt_senha.value.strip(),
-            cpf=txt_cpf.value.strip(),
-            whatsapp=txt_whatsapp.value.strip(),
-            chave_pix=txt_chave_pix.value.strip(),
-            foto_base64=foto_base64_str[0]
-        )
-
-        fechar_dialog()
-
-        if success:
-            show_snack("Conta de Staff criada com sucesso!", is_error=False)
-            on_back()
-        else:
-            show_snack("Erro ao cadastrar. E-mail ou CPF já cadastrados.")
-
-    dlg_confirmacao = ft.AlertDialog(
-        title=ft.Text("Verificação de E-mail"),
-        content=ft.Column(tight=True, controls=[
-            ft.Text("Enviamos um código de verificação para o seu e-mail.", size=13, color=COLOR_TEXT_SECONDARY),
-            txt_codigo_validacao
-        ]),
-        actions=[
-            ft.TextButton("Cancelar", on_click=fechar_dialog),
-            ft.ElevatedButton("Confirmar e Criar Conta", style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"), on_click=confirm_registration)
-        ]
-    )
-
-    def handle_register(_):
-        email_val = (txt_email.value or "").strip()
-        senha_val = (txt_senha.value or "").strip()
-        cpf_val = (txt_cpf.value or "").strip()
-        whats_val = (txt_whatsapp.value or "").strip()
-
-        if not all([txt_nome.value, email_val, senha_val, cpf_val, whats_val]):
-            show_snack("Preencha todos os campos do cadastro.")
-            return
-
-        if not foto_base64_str[0]:
-            show_snack("A selfie é obrigatória!")
-            return
-
-        if not is_valid_email(email_val):
-            show_snack("Formato de e-mail inválido!")
-            return
-
-        is_strong, msg_senha = is_strong_password(senha_val)
-        if not is_strong:
-            show_snack(msg_senha)
-            return
-
-        if not is_valid_cpf(cpf_val):
-            show_snack("CPF inválido! Insira um CPF verdadeiro.")
-            return
-
-        if not is_valid_whatsapp(whats_val):
-            show_snack("WhatsApp inválido! Use o formato (DD) 9XXXX-XXXX.")
-            return
-
-        codigo = generate_verification_code(email_val)
-        send_email_code(email_val, codigo)
-        
-        page.overlay.append(dlg_confirmacao)
-        dlg_confirmacao.open = True
-        page.update()
 
     def show_snack(msg, is_error=True):
-        snack = ft.SnackBar(content=ft.Text(msg), bgcolor=COLOR_ERROR if is_error else COLOR_SUCCESS)
+        snack = ft.SnackBar(content=ft.Text(msg), bgcolor="#E76F51" if is_error else "#2A9D8F")
         page.overlay.append(snack)
         snack.open = True
         page.update()
 
-    return ft.Container(
-        expand=True, alignment=ft.Alignment(0, 0),
-        content=ft.Container(
-            width=420, bgcolor=COLOR_SURFACE, padding=30, border_radius=12,
-            content=ft.Column(
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=12, scroll=ft.ScrollMode.AUTO,
-                controls=[
-                    ft.Row(controls=[
-                        ft.IconButton(ft.Icons.ARROW_BACK, icon_color=COLOR_TEXT_PRIMARY, on_click=lambda _: on_back()),
-                        ft.Text("Inscrição de Staff", size=20, weight=ft.FontWeight.BOLD, color=COLOR_TEXT_PRIMARY)
-                    ]),
-                    ft.Row(controls=[avatar_img, btn_tirar_selfie], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
-                    txt_empresa_id, txt_nome, txt_email, txt_senha, txt_cpf, txt_whatsapp, txt_chave_pix,
-                    ft.Container(height=10),
-                    ft.ElevatedButton("Validar Dados e Concluir", style=ft.ButtonStyle(bgcolor=COLOR_PRIMARY, color="#000000"), width=380, on_click=handle_register)
-                ]
+    def handle_cadastrar(e):
+        nome_val = txt_nome.value.strip() if txt_nome.value else ""
+        email_val = txt_email.value.strip() if txt_email.value else ""
+        senha_val = txt_senha.value.strip() if txt_senha.value else ""
+        cpf_val = txt_cpf.value.strip() if txt_cpf.value else ""
+        rg_val = txt_rg.value.strip() if txt_rg.value else ""
+        whatsapp_val = txt_whatsapp.value.strip() if txt_whatsapp.value else ""
+
+        # Trava os campos obrigatórios
+        if not all([nome_val, email_val, senha_val, cpf_val, rg_val, whatsapp_val]):
+            show_snack("Todos os campos de texto (incluindo RG e CPF) são obrigatórios!")
+            return
+
+        if not doc_base64[0]:
+            show_snack("É OBRIGATÓRIO anexar o documento (RG/CPF) em foto ou PDF!")
+            return
+
+        try:
+            # Garante que a tabela tem as colunas rg e documento_base64
+            query_insert = """
+                INSERT INTO usuarios (empresa_id, nome, email, senha, cpf, rg, whatsapp, foto_base64, perfil, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'STAFF', 'ATIVO');
+            """
+            execute_query(
+                query_insert, 
+                (default_empresa_id, nome_val, email_val, senha_val, cpf_val, rg_val, whatsapp_val, doc_base64[0])
             )
+            show_snack("Cadastro de Staff realizado com sucesso!", is_error=False)
+            if on_back:
+                on_back()
+        except Exception as ex:
+            show_snack(f"Erro ao salvar cadastro: {ex}")
+
+    return ft.Container(
+        expand=True, bgcolor="#0B132B", padding=20, alignment=ft.Alignment(0, 0),
+        content=ft.Container(
+            width=400, bgcolor="#1E293B", padding=20, border_radius=12,
+            content=ft.Column([
+                ft.Row([
+                    ft.IconButton(ft.Icons.ARROW_BACK, icon_color="white", on_click=lambda _: on_back() if on_back else None),
+                    ft.Text("Cadastro de Staff", size=18, weight="bold", color="white")
+                ]),
+                txt_nome, txt_email, txt_senha, txt_cpf, txt_rg, txt_whatsapp,
+                btn_anexar_doc,
+                lbl_doc_status,
+                ft.Container(height=10),
+                ft.ElevatedButton(
+                    "Finalizar Cadastro", 
+                    style=ft.ButtonStyle(bgcolor="#4CC9F0", color="black"), 
+                    width=360, height=45,
+                    on_click=handle_cadastrar
+                )
+            ], spacing=10, scroll=ft.ScrollMode.AUTO)
         )
     )
